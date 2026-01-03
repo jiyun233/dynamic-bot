@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  dynamic-bot:
+    # 构建配置
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # 容器名称
+    container_name: dynamic-bot
+
+    # 重启策略
+    restart: unless-stopped
+
+    # 环境变量
+    environment:
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=-Xms256m -Xmx512m -XX:+UseG1GC
+
+    # 数据卷挂载
+    volumes:
+      # 配置文件目录
+      - ./config:/app/config
+      # 数据目录（缓存、数据库等）
+      - ./data:/app/data
+      # 临时文件目录
+      - ./temp:/app/temp
+      # 日志目录
+      - ./logs:/app/logs
+
+    # 网络模式（使用 host 模式可以直接访问宿主机的 NapCat）
+    # 如果 NapCat 也在 Docker 中运行，请改用自定义网络
+    network_mode: "bridge"
+
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# 如果 NapCat 也在 Docker 中运行，可以使用以下配置：
+#
+# services:
+#   napcat:
+#     image: napcat/napcat:latest  # 请替换为实际的 NapCat 镜像
+#     container_name: napcat
+#     restart: unless-stopped
+#     ports:
+#       - "3001:3001"  # NapCat WebSocket 端口
+#     volumes:
+#       - ./napcat-config:/app/config
+#     networks:
+#       - bot-network
+#
+#   bilibili-bot:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile
+#     container_name: dynamic-bot
+#     restart: unless-stopped
+#     environment:
+#       - TZ=Asia/Shanghai
+#       - JAVA_OPTS=-Xms256m -Xmx512m -XX:+UseG1GC
+#     volumes:
+#       - ./config:/app/config
+#       - ./data:/app/data
+#       - ./temp:/app/temp
+#       - ./logs:/app/logs
+#     depends_on:
+#       - napcat
+#     networks:
+#       - bot-network
+#     logging:
+#       driver: "json-file"
+#       options:
+#         max-size: "10m"
+#         max-file: "3"
+#
+# networks:
+#   bot-network:
+#     driver: bridge
