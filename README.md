@@ -77,6 +77,10 @@ config/
 data/
 ├── font/            # 字体文件目录
 └── cookies.json     # B站 Cookie（可选）
+
+temp/                # 临时文件目录（二维码、缓存等）
+
+logs/                # 日志文件目录
 ```
 
 ### 3. 运行 Bot
@@ -98,6 +102,7 @@ docker run -d --name dynamic-bot \
   --network bridge \
   -v ./config:/app/config \
   -v ./data:/app/data \
+  -v ./temp:/app/temp \
   -v ./logs:/app/logs \
   menghuanan/dynamic-bot:latest
 ```
@@ -217,7 +222,7 @@ docker pull menghuanan/dynamic-bot:latest
 #### 2. 创建配置目录
 
 ```bash
-mkdir -p config data logs
+mkdir -p config data temp logs
 ```
 
 #### 3. 使用 docker run 启动
@@ -229,6 +234,7 @@ docker run -d \
   --network bridge \
   -v ./config:/app/config \
   -v ./data:/app/data \
+  -v ./temp:/app/temp \
   -v ./logs:/app/logs \
   menghuanan/dynamic-bot:latest
 ```
@@ -250,6 +256,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./data:/app/data
+      - ./temp:/app/temp
       - ./logs:/app/logs
     network_mode: "bridge"  # 使用 bridge 网络模式
     logging:
