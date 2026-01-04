@@ -12,6 +12,16 @@ RUN apt-get update && \
     fonts-noto-cjk \
     fonts-noto-color-emoji \
     fontconfig \
+    # Skiko 图形库依赖（用于二维码生成和图片渲染）
+    libgl1-mesa-glx \
+    libx11-6 \
+    libxrender1 \
+    libxext6 \
+    libfreetype6 \
+    libxtst6 \
+    libxi6 \
+    # 虚拟显示环境（用于 headless 图形渲染）
+    xvfb \
     # 清理缓存
     && fc-cache -fv \
     && apt-get clean \
@@ -33,8 +43,11 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # 设置 JVM 参数
 ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:+UseContainerSupport"
 
-# 启动命令
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/bot.jar"]
+# 设置虚拟显示环境
+ENV DISPLAY=:99
+
+# 启动命令（使用 xvfb-run 提供虚拟显示）
+ENTRYPOINT ["sh", "-c", "Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 & java $JAVA_OPTS -jar /app/bot.jar"]
 
 # 健康检查（检查进程是否存在）
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
