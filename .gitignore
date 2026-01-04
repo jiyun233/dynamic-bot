@@ -142,3 +142,5 @@ src/test/kotlin/RunTerminal.kt
 
 # ignore test outputs
 src/test/resources/output/**
+
+.claude/
