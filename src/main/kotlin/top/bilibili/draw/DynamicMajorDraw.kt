@@ -546,10 +546,12 @@ suspend fun drawPgcCard(
             )
         }
 
-        // 绘制封面
+        // 绘制封面（垂直居中）
+        val availableHeight = cardHeight - quality.badgeHeight - quality.cardPadding
+        val coverTopOffset = (availableHeight - scaledCoverHeight) / 2
         val coverRRect = RRect.makeComplexXYWH(
             videoCardRect.left,
-            videoCardRect.top,
+            quality.badgeHeight + coverTopOffset,
             desiredCoverWidth,
             scaledCoverHeight,
             cardBadgeArc
@@ -558,7 +560,7 @@ suspend fun drawPgcCard(
 
         // 右侧文本区域起始 X 坐标
         val textX = coverRRect.right + quality.cardPadding
-        var textY = videoCardRect.top + quality.cardPadding / 2
+        var textY = coverRRect.top + quality.cardPadding / 2
 
         // 第一行：标题（加粗，与封面顶部齐平）
         titleParagraph.paint(canvas, textX, textY)
