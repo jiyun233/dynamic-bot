@@ -109,7 +109,14 @@ data class BiliAccountConfig(
 data class CheckConfig(
     var interval: Int = 15,
     var liveInterval: Int = 15,
+    @Deprecated("已废弃，请使用 lowSpeedTime 和 lowSpeedRange")
     var lowSpeed: String = "0-0x2",
+    /** 低频检测时段，格式："开始小时-结束小时"，如 "22-8" 表示晚上10点到早上8点（跨午夜），默认晚22点到早8点为低频时段 */
+    var lowSpeedTime: String = "22-8",
+    /** 低频检测间隔范围（秒），格式："最小-最大"，如 "60-240" 表示60-240秒随机间隔，默认为正常间隔的2倍 */
+    var lowSpeedRange: String = "60-240",
+    /** 正常检测间隔范围（秒），格式："最小-最大"，如 "30-120" 表示30-120秒随机间隔 */
+    var normalRange: String = "30-120",
     val checkReportInterval: Int = 10,
     val timeout: Int = 10
 )

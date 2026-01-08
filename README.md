@@ -1,4 +1,4 @@
-# BiliBili 动态推送 Bot v1.1
+# BiliBili 动态推送 Bot v1.2
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -63,7 +63,7 @@ dynamic-bot/
 ```
 
 编译完成后,可执行文件位于：
-- `build/libs/dynamic-bot-1.1.jar`
+- `build/libs/dynamic-bot-1.2.jar`
 
 ### 2. 配置文件
 
@@ -88,7 +88,7 @@ logs/                # 日志文件目录
 #### 方式一：直接运行 JAR
 
 ```bash
-java -jar build/libs/dynamic-bot-1.1.jar
+java -jar build/libs/dynamic-bot-1.2.jar
 ```
 
 #### 方式二：使用 Docker Hub 镜像（推荐）
@@ -303,7 +303,8 @@ docker logs -f dynamic-bot
 
 #### 可用标签
 
-- `latest` - 最新版本
+- `latest` - 最新版本（v1.2）
+- `v1.2` - 稳定版本 v1.2
 - `v1.1` - 稳定版本 v1.1
 - `v1.0` - 稳定版本 v1.0
 
@@ -363,7 +364,7 @@ Windows 用户可使用自动化脚本简化操作：
 **docker-push.ps1** - Docker Hub 推送脚本
 ```powershell
 .\docker-push.ps1 latest     # 推送 latest 标签
-.\docker-push.ps1 v1.1       # 推送指定版本标签
+.\docker-push.ps1 v1.2       # 推送指定版本标签
 ```
 
 ## 开发说明
@@ -398,6 +399,32 @@ Windows 用户可使用自动化脚本简化操作：
    - 文档和示例配置
 
 ## 更新日志
+
+### v1.2 (2026-01-08)
+
+**核心功能增强**
+- 🚀 动态轮询优化：支持时间段调频，可配置低频时段（如晚22点-早8点）使用随机间隔，降低API请求频率
+  - 配置 `lowSpeedTime` 设置低频时段（默认 "22-8" 表示晚22点到早8点）
+  - 配置 `lowSpeedRange` 设置低频时段的随机间隔范围（默认 "60-240" 秒，为正常间隔的2倍）
+  - 配置 `normalRange` 设置正常时段的随机间隔范围（默认 "30-120" 秒）
+  - 伪随机间隔避免固定间隔请求被B站检测为爬虫
+- 🚀 关键词过滤器：支持按联系人配置黑白名单，精确控制推送内容
+  - 类型过滤：可屏蔽或只允许特定类型动态（转发、视频、专栏、音乐、直播等）
+  - 正则过滤：支持正则表达式匹配动态内容（如屏蔽抽奖、广告等）
+  - 支持黑名单和白名单两种模式
+
+**重要修复**
+- ✅ 修复黑名单机制覆盖：解决特定联系人消息绕过黑名单和过滤器的问题
+- ✅ 改进推送失败诊断：
+  - 添加 API 响应解析，记录失败的retcode和错误信息
+  - 增强错误日志，明确标注失败的联系人
+  - 提示检查 NapCat 日志获取详细错误原因
+- ✅ 修复目录初始化问题：启动时自动创建所有必要目录（config, data, temp, logs）
+
+**改进优化**
+- ✅ 启动日志显示版本号：便于识别当前运行版本
+- ✅ 清理废弃代码：移除大量注释的 Mirai 相关代码（约 123 行）
+- ✅ 改进日志输出：优化错误信息格式，提高问题定位效率
 
 ### v1.1 (2026-01-06)
 

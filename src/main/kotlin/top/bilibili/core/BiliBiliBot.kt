@@ -72,15 +72,43 @@ object BiliBiliBot : CoroutineScope {
 
     /** 启动 Bot */
     fun start() {
+        // 先加载配置以确定日志级别
+        try {
+            BiliConfigManager.init()
+            // 根据配置设置日志级别
+            if (BiliConfigManager.config.enableConfig.debugMode) {
+                System.setProperty("APP_LOG_LEVEL", "DEBUG")
+                ch.qos.logback.classic.LoggerContext::class.java.cast(
+                    org.slf4j.LoggerFactory.getILoggerFactory()
+                ).let { context ->
+                    context.getLogger("top.bilibili").level = ch.qos.logback.classic.Level.DEBUG
+                    context.getLogger("ROOT").level = ch.qos.logback.classic.Level.DEBUG
+                }
+                logger.debug("Debug 模式已启用")
+            }
+        } catch (e: Exception) {
+            logger.error("加载配置失败: ${e.message}")
+            return
+        }
+
         logger.info("========================================")
-        logger.info("  BiliBili 动态推送 Bot")
-        logger.info("  版本: 1.0")
+        logger.info("  BiliBili 动态推送 Bot v1.2")
         logger.info("========================================")
 
         try {
-            // 1. 加载配置
+            // 0. 创建必要的目录
+            logger.info("正在初始化目录结构...")
+            listOf("config", "data", "temp", "logs").forEach { dir ->
+                File(dir).apply {
+                    if (!exists()) {
+                        mkdirs()
+                        logger.debug("创建目录: $dir")
+                    }
+                }
+            }
+
+            // 1. 加载配置（已在前面加载）
             logger.info("正在加载配置...")
-            BiliConfigManager.init()
             ConfigManager.init()
             config = ConfigManager.botConfig
 
