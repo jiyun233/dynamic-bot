@@ -102,7 +102,7 @@ object BiliBiliBot : CoroutineScope {
         }
 
         logger.info("========================================")
-        logger.info("  BiliBili 动态推送 Bot v1.3")
+        logger.info("  BiliBili 动态推送 Bot v1.3.1")
         logger.info("========================================")
 
         try {

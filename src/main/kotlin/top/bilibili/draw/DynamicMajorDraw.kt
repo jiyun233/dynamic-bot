@@ -768,16 +768,24 @@ suspend fun ModuleDynamic.Major.Draw.drawGeneral(): Image {
 
     when (items.size) {
         1 -> {
-            drawItemWidth = if (items[0].width > cardContentRect.width / 2) {
-                cardContentRect.width
+            // 验证图片尺寸是否有效
+            if (items[0].width <= 0 || items[0].height <= 0) {
+                logger.warn("动态图片尺寸无效: width=${items[0].width}, height=${items[0].height}, src=${items[0].src}")
+                // 使用默认的正方形尺寸
+                drawItemWidth = cardContentRect.width / 2
+                drawItemHeight = drawItemWidth
             } else {
-                items[0].width * 2f
-            }
-            val drawHeight = items[0].height.toFloat() / items[0].width.toFloat() * drawItemWidth
-            drawItemHeight = if (drawHeight > drawItemWidth * 2) {
-                drawItemWidth * 2
-            } else {
-                drawHeight
+                drawItemWidth = if (items[0].width > cardContentRect.width / 2) {
+                    cardContentRect.width
+                } else {
+                    items[0].width * 2f
+                }
+                val drawHeight = items[0].height.toFloat() / items[0].width.toFloat() * drawItemWidth
+                drawItemHeight = if (drawHeight > drawItemWidth * 2) {
+                    drawItemWidth * 2
+                } else {
+                    drawHeight
+                }
             }
         }
 
@@ -799,6 +807,15 @@ suspend fun ModuleDynamic.Major.Draw.drawGeneral(): Image {
                 quality.drawSpace * 2
             }
             drawItemNum = 3
+        }
+
+        else -> {
+            // 10张及以上图片，使用3列布局
+            drawItemWidth = (cardContentRect.width - quality.drawSpace * 2) / 3
+            drawItemHeight = drawItemWidth
+            drawItemSpace += quality.drawSpace * ((items.size - 1) / 3)
+            drawItemNum = 3
+            logger.debug("动态包含 ${items.size} 张图片，使用3列布局")
         }
     }
 
