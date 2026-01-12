@@ -5,12 +5,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.bilibili.BiliConfigManager
 import top.bilibili.BiliData
+import top.bilibili.DynamicFilter
+import top.bilibili.DynamicFilterType
+import top.bilibili.FilterMode
 import top.bilibili.core.BiliBiliBot
 import top.bilibili.core.ContactId
 import top.bilibili.data.BiliMessage
 import top.bilibili.data.DynamicMessage
 import top.bilibili.data.LiveCloseMessage
 import top.bilibili.data.LiveMessage
+import top.bilibili.data.DynamicType
 import top.bilibili.napcat.MessageSegment
 import top.bilibili.utils.ImageCache
 import top.bilibili.utils.parseContactId
@@ -97,6 +101,10 @@ object SendTasker : BiliTasker("SendTasker") {
         if (specificContact != null) {
             BiliBiliBot.logger.info("消息指定了联系人: $specificContact")
             val contact = parseContactId(specificContact) ?: return
+            if (!shouldSendToContact(message, specificContact)) {
+                BiliBiliBot.logger.info("过滤器已拦截发送到 $specificContact")
+                return
+            }
             val segments = buildMessageSegments(message, specificContact)
             messageQueue.send(contact to segments)
             return
@@ -114,6 +122,11 @@ object SendTasker : BiliTasker("SendTasker") {
                     continue
                 }
 
+                if (!shouldSendToContact(message, contactStr)) {
+                    BiliBiliBot.logger.debug("过滤器已拦截发送到 $contactStr")
+                    continue
+                }
+
                 // 构建消息段
                 val segments = buildMessageSegments(message, contactStr)
                 BiliBiliBot.logger.info("为联系人 $contactStr 构建了 ${segments.size} 个消息段")
@@ -128,6 +141,81 @@ object SendTasker : BiliTasker("SendTasker") {
             } catch (e: Exception) {
                 BiliBiliBot.logger.error("处理联系人 $contactStr 时出错: ${e.message}", e)
             }
+        }
+    }
+
+    private fun shouldSendToContact(message: BiliMessage, contactStr: String): Boolean {
+        return when (message) {
+            is DynamicMessage -> shouldSendDynamicToContact(message, contactStr)
+            else -> true
+        }
+    }
+
+    private fun shouldSendDynamicToContact(message: DynamicMessage, contactStr: String): Boolean {
+        val dynamicFilter = getDynamicFilter(contactStr, message.mid) ?: return true
+
+        if (!passesTypeFilter(message.type, dynamicFilter)) return false
+        if (!passesRegularFilter(message.content, dynamicFilter)) return false
+
+        return true
+    }
+
+    private fun getDynamicFilter(contactStr: String, mid: Long): DynamicFilter? {
+        val byContact = BiliData.filter[contactStr] ?: return null
+        return byContact[mid] ?: byContact[0L]
+    }
+
+    private fun passesTypeFilter(type: DynamicType, filter: DynamicFilter): Boolean {
+        val typeSelect = filter.typeSelect
+        if (typeSelect.list.isEmpty()) return true
+
+        val mappedType = mapDynamicType(type)
+        return when (typeSelect.mode) {
+            FilterMode.WHITE_LIST -> mappedType in typeSelect.list
+            FilterMode.BLACK_LIST -> mappedType !in typeSelect.list
+        }
+    }
+
+    private fun passesRegularFilter(content: String, filter: DynamicFilter): Boolean {
+        val regularSelect = filter.regularSelect
+        if (regularSelect.list.isEmpty()) return true
+
+        val text = content.ifEmpty { "" }
+        return when (regularSelect.mode) {
+            FilterMode.WHITE_LIST -> {
+                regularSelect.list.all { pattern ->
+                    val regex = runCatching { Regex(pattern) }.getOrNull()
+                    if (regex == null) {
+                        BiliBiliBot.logger.warn("忽略非法正则: $pattern")
+                        true
+                    } else {
+                        regex.containsMatchIn(text)
+                    }
+                }
+            }
+            FilterMode.BLACK_LIST -> {
+                regularSelect.list.none { pattern ->
+                    val regex = runCatching { Regex(pattern) }.getOrNull()
+                    if (regex == null) {
+                        BiliBiliBot.logger.warn("忽略非法正则: $pattern")
+                        false
+                    } else {
+                        regex.containsMatchIn(text)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun mapDynamicType(type: DynamicType): DynamicFilterType {
+        return when (type) {
+            DynamicType.DYNAMIC_TYPE_FORWARD -> DynamicFilterType.FORWARD
+            DynamicType.DYNAMIC_TYPE_ARTICLE -> DynamicFilterType.ARTICLE
+            DynamicType.DYNAMIC_TYPE_AV -> DynamicFilterType.VIDEO
+            DynamicType.DYNAMIC_TYPE_MUSIC -> DynamicFilterType.MUSIC
+            DynamicType.DYNAMIC_TYPE_LIVE,
+            DynamicType.DYNAMIC_TYPE_LIVE_RCMD -> DynamicFilterType.LIVE
+            else -> DynamicFilterType.DYNAMIC
         }
     }
 
