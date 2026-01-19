@@ -555,6 +555,7 @@ object BiliBiliBot : CoroutineScope {
             /bili group remove <分组名> <群号> - 从分组移除群
             /bili group list [分组名] - 查看分组信息
             /bili group subscribe <分组名> <UID> - 订阅到分组
+            /bili group unsubscribe <分组名> <UID> - 从分组移除订阅
             /bili groups - 查看所有分组
 
             过滤器管理（支持黑名单与白名单）:
@@ -700,7 +701,7 @@ object BiliBiliBot : CoroutineScope {
     /** 处理 /bili group 命令 */
     private suspend fun handleBiliGroupCommand(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
         if (args.size < 2) {
-            val msg = "用法: /bili group <create|delete|add|remove|list|subscribe>"
+            val msg = "用法: /bili group <create|delete|add|remove|list|subscribe|unsubscribe>"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
             return
@@ -713,6 +714,7 @@ object BiliBiliBot : CoroutineScope {
             "remove", "rm" -> handleBiliGroupRemove(contactId, args, isGroup)
             "list", "ls" -> handleBiliGroupList(contactId, args, isGroup)
             "subscribe", "sub" -> handleBiliGroupSubscribe(contactId, args, isGroup)
+            "unsubscribe", "unsub" -> handleBiliGroupUnsubscribe(contactId, args, isGroup)
             else -> {
                 val msg = "未知子命令: ${args[1]}"
                 if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
@@ -961,6 +963,77 @@ object BiliBiliBot : CoroutineScope {
                 appendLine("UID: $uid")
                 appendLine("分组: $groupName")
                 appendLine("成功添加: $addedCount 个联系人")
+                if (firstError != null) {
+                    appendLine("部分失败: $firstError")
+                }
+            }.trim()
+        }
+
+        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+    }
+
+    private suspend fun handleBiliGroupUnsubscribe(contactId: Long, args: List<String>, isGroup: Boolean) {
+        if (args.size < 4) {
+            val msg = "用法: /bili group unsubscribe <分组名> <UID>"
+            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            return
+        }
+
+        val groupName = args[2]
+        val uid = args[3].toLongOrNull()
+
+        if (uid == null) {
+            val msg = "UID 格式错误"
+            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            return
+        }
+
+        val group = top.bilibili.BiliData.group[groupName]
+        if (group == null) {
+            val msg = "分组 $groupName 不存在"
+            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            return
+        }
+
+        if (group.contacts.isEmpty()) {
+            val msg = "分组 $groupName 中没有任何联系人"
+            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            return
+        }
+
+        var removedCount = 0
+        var firstError: String? = null
+
+        for (contact in group.contacts) {
+            try {
+                val result = top.bilibili.service.DynamicService.removeSubscribe(uid, contact, isSelf = false)
+                if (result.contains("成功")) {
+                    removedCount++
+                } else if (firstError == null && (result.contains("失败") || result.contains("错误"))) {
+                    firstError = result
+                }
+            } catch (e: Exception) {
+                if (firstError == null) {
+                    firstError = e.message
+                }
+            }
+        }
+
+        top.bilibili.BiliConfigManager.saveData()
+
+        val msg = if (firstError != null && removedCount == 0) {
+            "取消订阅失败：$firstError"
+        } else {
+            buildString {
+                appendLine("取消订阅操作完成！")
+                appendLine("UID: $uid")
+                appendLine("分组: $groupName")
+                appendLine("成功移除: $removedCount 个联系人")
                 if (firstError != null) {
                     appendLine("部分失败: $firstError")
                 }
