@@ -226,10 +226,11 @@ suspend fun drawGeneral(id: String, tag: String, time: String, author: ModuleAut
     val isPgcContent = tag in listOf("番剧", "电影", "纪录片", "国创", "电视剧", "综艺")
 
     if (isPgcContent) {
-        // PGC 内容直接返回，居中显示
-        val img = makeCardBg(imgData!!.height, colors) {
-            val x = (quality.imageWidth - imgData.width) / 2f
-            it.drawImage(imgData, x, 0f)
+        val imgList = mutableListOf<org.jetbrains.skia.Image>()
+        imgData?.let { imgList.add(it) }
+        val cimg = imgList.assembleCard(id, tag = "搜索")
+        val img = makeCardBg(cimg.height, colors) {
+            it.drawImage(cimg, 0f, 0f)
         }
         return cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
     }
