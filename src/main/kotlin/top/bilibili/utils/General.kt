@@ -1,4 +1,4 @@
-﻿package top.bilibili.utils
+package top.bilibili.utils
 
 import io.ktor.client.call.*
 import io.ktor.client.request.*
@@ -468,9 +468,10 @@ suspend fun actionNotify(subject: Long?, message: ActionMessage) {
 }
 
 suspend fun actionNotify(message: String) {
-    // TODO: 使用新的消息发送机制
-    // findContactAll(BiliConfigManager.config.admin)?.sendMessage(message)
-    logger.info("通知消息: $message")
+    val success = BiliBiliBot.sendAdminMessage(message)
+    if (!success) {
+        logger.info("通知消息: $message")
+    }
 }
 
 inline fun matchUser(user: String, matchSuccess: (uid: Long) -> String?): String? {

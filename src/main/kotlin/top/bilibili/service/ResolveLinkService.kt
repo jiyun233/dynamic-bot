@@ -1,4 +1,4 @@
-﻿package top.bilibili.service
+package top.bilibili.service
 
 import org.jetbrains.skia.Color
 import top.bilibili.BiliConfigManager
@@ -9,13 +9,8 @@ import top.bilibili.utils.*
 import java.time.Instant
 
 
-private val regex = BiliConfigManager.config.linkResolveConfig.reg
-
 suspend fun matchingRegular(content: String): ResolvedLinkInfo? {
-    return if (regex.any { it.find(content) != null }) {
-        logger.info("开始解析链接 -> $content")
-        matchingInternalRegular(content)
-    } else null
+    return matchingInternalRegular(content)
 }
 
 suspend fun matchingAllRegular(content: String): List<ResolvedLinkInfo> {

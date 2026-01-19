@@ -50,7 +50,6 @@ data class EnableConfig(
     var translateEnable: Boolean = false,
     val proxyEnable: Boolean = false,
     val cacheClearEnable: Boolean = true,
-    val showLoadingMessage: Boolean = true,
 )
 
 @Serializable
@@ -110,8 +109,6 @@ data class BiliAccountConfig(
 data class CheckConfig(
     var interval: Int = 15,
     var liveInterval: Int = 15,
-    @Deprecated("已废弃，请使用 lowSpeedTime 和 lowSpeedRange")
-    var lowSpeed: String = "0-0x2",
     /** 低频检测时段，格式："开始小时-结束小时"，如 "22-8" 表示晚上10点到早上8点（跨午夜），默认晚22点到早8点为低频时段 */
     var lowSpeedTime: String = "22-8",
     /** 低频检测间隔范围（秒），格式："最小-最大"，如 "60-240" 表示60-240秒随机间隔，默认为正常间隔的2倍 */
@@ -177,18 +174,7 @@ data class CacheConfig(
 data class LinkResolveConfig(
     val triggerMode: TriggerMode = TriggerMode.At,
     val returnLink: Boolean = false,
-    val regex: List<String> = listOf(
-        """(www\.bilibili\.com/video/((BV[0-9A-z]{10})|(av\d{1,20})))|^(BV[0-9A-z]{10})|^(av\d{1,20})""",
-        """(www\.bilibili\.com/read/cv\d{1,10})|^(cv\d{1,10})|(www\.bilibili\.com/read/mobile/\d{1,10})""",
-        """((www|m)\.bilibili\.com/bangumi/(play|media)/(ss|ep|md)\d+)|^((ss|ep|md)\d+)""",
-        """([tm]\.bilibili\.com/(dynamic/)?\d+)|(www\.bilibili\.com/opus/\d+)""",
-        """live\.bilibili\.com/(h5/)?\d+""",
-        """space\.bilibili\.com/\d+""",
-        """(b23\.tv|bili2233\.cn)\\?/[0-9A-z]+""",
-    )
-){
-    val reg: List<Regex> get() = regex.map { it.toRegex() }
-}
+)
 
 
 // (www\.bilibili\.com/video/((BV[0-9A-z]{10})|(av\d{1,10})))|^(BV[0-9A-z]{10})|^(av\d{1,10})

@@ -1172,6 +1172,15 @@ object BiliBiliBot : CoroutineScope {
         return napCat.sendPrivateMessage(userId, message)
     }
 
+    suspend fun sendAdminMessage(message: String): Boolean {
+        val adminId = BiliConfigManager.config.admin
+        if (adminId <= 0L) {
+            logger.warn("未配置管理员 ID，无法发送通知")
+            return false
+        }
+        return sendPrivateMessage(adminId, listOf(MessageSegment.text(message)))
+    }
+
     /** 发送消息到指定联系人 */
     suspend fun sendMessage(contact: ContactId, message: List<MessageSegment>): Boolean {
         return when (contact.type) {
