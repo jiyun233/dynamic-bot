@@ -1156,6 +1156,9 @@ object BiliBiliBot : CoroutineScope {
             logger.info("启动 CacheClearTasker...")
             top.bilibili.tasker.CacheClearTasker.start()
 
+            logger.info("启动 LogClearTasker...")
+            top.bilibili.tasker.LogClearTasker.start()
+
             logger.info("所有任务已启动")
         } catch (e: Exception) {
             logger.error("启动任务失败: ${e.message}", e)
