@@ -5,14 +5,30 @@
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 由 [bilibili-dynamic-mirai-plugin](https://github.com/Colter23/bilibili-dynamic-mirai-plugin) 改造而来。  
-代码部分则由 [claude](https://github.com/claude) 倾力打造。  
-这是基于 NapCat 的 B站动态推送机器人，支持动态订阅、直播通知、链接解析等功能。
+代码部分则由 [claude](https://github.com/claude) 主刀构建雏形 GPT-5.2-Codex 协助修复BUG。  
+这是基于 NapCat 的 B站动态、直播推送机器人，支持动态订阅、直播通知、链接解析等功能。
+
+## 文档目录
+
+- [预览效果](#预览效果)
+- [项目结构](#项目结构)
+- [快速开始](#快速开始)
+- [主要功能](#主要功能)
+- [配置说明](#配置说明)
+- [Docker 部署](#docker-部署)
+- [开发说明](#开发说明)
+- [与原项目的区别](#与原项目的区别)
+- [更新日志](#更新日志)
+- [故障排查](#故障排查)
+- [许可证](#许可证)
+- [联系方式](#联系方式)
 
 ## 预览效果
 
 <img src="docs/dynamic.png" width="400" alt="预览图片1">
-<img src="docs/bangumi.png" width="400" alt="预览图片2">
-<img src="docs/live.png" width="400" alt="预览图片3">
+<img src="docs/live.png" width="400" alt="预览图片2">
+<img src="docs/Video.png" width="400" alt="预览图片3">
+<img src="docs/bangumi.png" width="400" alt="预览图片4">
 
 ## 项目结构
 
@@ -141,30 +157,36 @@ docker run -d --name dynamic-bot \
 - `/bili help` - 显示帮助 
 
 #### 高级命令（/bili）
-订阅管理:
-- `/bili add <UID> <群号>` - 添加订阅到指定群
-- `/bili remove <UID> <群号>` - 从指定群移除订阅
-- `/bili list` - 查看当前群的订阅
-- `/bili list <UID>` - 查看UID推送到哪些群
+[查看 `/bili` 帮助图](docs/HELP.png)
+  <img src="docs/HELP.png" width="420" alt="高级命令预览">
 
-分组管理:
-- `/bili group create <分组名>` - 创建分组
-- `/bili group delete <分组名>` - 删除分组
-- `/bili group add <分组名> <群号>` - 将群加入分组
-- `/bili group remove <分组名> <群号>` - 从分组移除群
-- `/bili group list [分组名]` - 查看分组信息
-- `/bili group subscribe <分组名> <UID>` - 订阅到分组
-- `/bili groups` - 查看所有分组
+    /bili 命令帮助:
 
-过滤器管理（支持黑名单与白名单）:
-- `/bili filter add <UID> <type|regex> <模式> <内容>` - 添加过滤器
-  - type模式: `/bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>`
-  - regex模式: `/bili filter add <UID> regex <black|white> <正则表达式>`
-- `/bili filter list <UID>` - 查看过滤器
-- `/bili filter del <UID> <索引>` - 删除过滤器(如 t0, r1)
+    订阅管理:
+    /bili add <UID|ss|md|ep> <群号> - 添加订阅到指定群
+    /bili remove <UID|ss|md|ep> <群号> - 从指定群移除订阅
+    /bili list - 查看当前群的订阅
+    /bili list <UID|ss|md|ep> - 查看订阅推送到哪些群
 
-其他:
-- `/bili help` - 显示此帮助 
+    分组管理:
+    /bili group create <分组名> - 创建分组
+    /bili group delete <分组名> - 删除分组
+    /bili group add <分组名> <群号> - 将群加入分组
+    /bili group remove <分组名> <群号> - 从分组移除群
+    /bili group list [分组名] - 查看分组信息
+    /bili group subscribe <分组名> <UID|ss|md|ep> - 订阅到分组
+    /bili group unsubscribe <分组名> <UID|ss|md|ep> - 从分组移除订阅
+    /bili groups - 查看所有分组
+
+    过滤器管理（支持黑名单与白名单）:
+    /bili filter add <UID> <type|regex> <模式> <内容> - 添加过滤器
+      type模式: /bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>
+      regex模式: /bili filter add <UID> regex <black|white> <正则表达式>
+    /bili filter list <UID> - 查看过滤器
+    /bili filter del <UID> <索引> - 删除过滤器(如 t0, r1)
+
+    其他:
+    /bili help - 显示此帮助
 
 ## 配置说明
 
@@ -172,16 +194,16 @@ docker run -d --name dynamic-bot \
 
 ```yaml
 napcat:
-  host: "127.0.0.1"     # NapCat WebSocket 主机地址
-  port: 3001            # NapCat WebSocket 端口
-  token: ""             # NapCat WebSocket 访问令牌 （如有）
+  host: "127.0.0.1"          # NapCat WebSocket 主机地址
+  port: 3001                 # NapCat WebSocket 端口
+  token: ""                  # NapCat WebSocket 访问令牌 （如有）
   heartbeat_interval: 30000  # 心跳间隔（毫秒）
   reconnect_interval: 5000   # 重连间隔（毫秒）
-  message_format: "array"    # 消息格式：array/string
+  message_format: "array"    # 消息格式：array
   max_reconnect_attempts: -1 # 最大重连尝试次数（-1表示无限次）
   connect_timeout: 10000     # 连接超时（毫秒）
-targets: []
-admins: []   # 管理员 QQ 号
+targets: []                  # 尚未启用
+admins: []                   # 尚未启用
 ```
 
 ### BiliData.yml 示例
@@ -200,36 +222,46 @@ dynamic:
 ### BiliConfig.yml 示例
 
 ```yaml
-admin: 0                      # 管理员 QQ 号
-enableConfig:                 # 启用配置
-  drawEnable: true            # 是否启用绘制功能
-  notifyEnable: true          # 是否启用通知功能
-  liveCloseNotifyEnable: true # 是否启用直播关播通知
-  lowSpeedEnable: true        # 是否启用低速度检测
-  translateEnable: false      # 是否启用翻译功能
-  proxyEnable: false          # 是否启用代理功能
-  cacheClearEnable: true      # 是否清理缓存
-  showLoadingMessage: true    # 是否显示加载信息
-accountConfig:                # 账户配置
-  cookie: ""                  # cookie
-  autoFollow: true            # 是否自动关注
-  followGroup: "Bot关注"
-checkConfig:                  # 此部分的功能已失效
-  interval: 15  
-  liveInterval: 15  
-  lowSpeed: "0-0x2"  
-  checkReportInterval: 10  
-  timeout: 10  
+admin: 0                        # 管理员 QQ 号
+enableConfig:                   # 启用配置
+  debugMode: false             # 启用调试模式
+  drawEnable: true              # 启用绘制功能
+  notifyEnable: true            # 启用通知功能
+  liveCloseNotifyEnable: true   # 启用直播关播通知
+  lowSpeedEnable: true          # 启用低速模式
+  translateEnable: false        # 启用翻译功能
+  proxyEnable: false            # 启用代理功能
+  cacheClearEnable: true        # 启用缓存清除功能
+accountConfig:                  # 账号配置
+  cookie: ""                    # B站账号 Cookie
+  autoFollow: true              # 自动关注用户
+  followGroup: "Bot关注"        # 自动关注分组
+checkConfig:                    # 检查配置
+  interval: 15                  # 检查间隔（秒）
+  liveInterval: 15              # 直播检查间隔（秒）
+  lowSpeedTime: "22-8"          # 低速模式时间范围（24小时格式）
+  lowSpeedRange: "60-240"       # 低速模式范围（秒）
+  normalRange: "30-120"         # 正常模式范围（秒）
+  checkReportInterval: 10       # 检查报告间隔（分钟）
+  timeout: 10                   # 检查超时（秒）
 pushConfig:
-  messageInterval: 100  # 消息间隔（毫秒）
-  pushInterval: 500  # 推送间隔（毫秒）
-  toShortLink: false  # 是否转换为短链接
+  messageInterval: 100          # 消息间隔（毫秒）
+  pushInterval: 500             # 推送间隔（毫秒）
+  toShortLink: false            # 是否转换为短链接
 imageConfig:
-  quality: "1000w"  # 图片质量（1000w/500w/200w）
-  theme: "v3"  # 图片主题（v3/v2/v1）
-  font: ""  # 自定义字体（如"宋体"）
-  defaultColor: "#d3edfa"  # 默认颜色（十六进制）
-  cardOrnament: "FanCard"  # 名片装饰（FanCard/None）
+  quality: "1000w"              # 图片质量（1000w/750w）  
+  theme: "v3"
+  font: ""
+  defaultColor: "#d3edfa"
+  cardOrnament: "FanCard"
+  colorGenerator:
+    hueStep: 30
+    lockSB: true
+    saturation: 0.25
+    brightness: 1.0
+  badgeEnable:
+    left: true
+    right: false
 templateConfig:
   defaultDynamicPush: "OneMsg"
   defaultLivePush: "OneMsg"
@@ -252,7 +284,7 @@ templateConfig:
     liveFooter: ""
     footerAlign: "LEFT"
 cacheConfig:
-  downloadOriginal: true  #是否下载原文件
+  downloadOriginal: true
   expires:
     "DRAW": 7
     "IMAGES": 7
@@ -266,20 +298,10 @@ translateConfig:
   baidu:
     APP_ID: ""
     SECURITY_KEY: ""
-linkResolveConfig:
-  triggerMode: "At"   #触发方式At(@bot时触发) Always(一直)
-  returnLink: false   #是否返回链接
-  regex:
-  - "(www\\.bilibili\\.com/video/((BV[0-9A-z]{10})|(av\\d{1,20})))|^(BV[0-9A-z]{10})|^(av\\\
-    d{1,20})"
-  - "(www\\.bilibili\\.com/read/cv\\d{1,10})|^(cv\\d{1,10})|(www\\.bilibili\\.com/read/mobile/\\\
-    d{1,10})"
-  - "((www|m)\\.bilibili\\.com/bangumi/(play|media)/(ss|ep|md)\\d+)|^((ss|ep|md)\\\
-    d+)"
-  - "([tm]\\.bilibili\\.com/(dynamic/)?\\d+)|(www\\.bilibili\\.com/opus/\\d+)"
-  - "live\\.bilibili\\.com/(h5/)?\\d+"
-  - "space\\.bilibili\\.com/\\d+"
-  - "(b23\\.tv|bili2233\\.cn)\\\\?/[0-9A-z]+"
+linkResolveConfig:             # 链接解析配置
+  triggerMode: "At"            # 触发模式：At/Always/Never
+  returnLink: false            # 是否返回链接
+
 ```
 
 ## Docker 部署
@@ -358,8 +380,6 @@ napcat:
   host: "NapCat WebSocket 主机地址"  
   port: 3001    #默认3001
   token: ""     #如果有则填入，没有不填
-
-admin: 你的QQ号
 ```
 
 重启容器：
@@ -382,7 +402,6 @@ docker logs -f dynamic-bot
 
 - `latest` - 最新版本（v1.4）
 - `v1.4` - 稳定版本 v1.4
-- `v1.3.1` - 稳定版本 v1.3.2
 - `v1.3.1` - 稳定版本 v1.3.1
 - `v1.3` - 稳定版本 v1.3
 - `v1.2` - 稳定版本 v1.2
@@ -415,7 +434,7 @@ docker logs -f dynamic-bot
 ### 容器配置
 
 - **基础镜像**: eclipse-temurin:17-jre-jammy
-- **JVM 参数**: `-Xms256m -Xmx512m -XX:+UseG1GC`
+- **JVM 参数**: `-Xms256m -Xmx512m -XX:+UseG1GC -XX:+UseContainerSupport`
 - **网络模式**: bridge（默认）
 - **健康检查**: 每30秒检查一次进程状态
 - **日志限制**: 10MB × 3 文件（自动轮转）
@@ -451,11 +470,11 @@ Windows 用户可使用自动化脚本简化操作：
 ## 开发说明
 
 ### 技术栈
-- Kotlin 1.9.22
-- Ktor 2.3.7（HTTP 客户端）
-- Skiko 0.7.93（图片渲染）
-- kotlinx.serialization（JSON 处理）
-- kotlinx.coroutines（协程）
+- Kotlin 2.0.0
+- Ktor 3.0.3（HTTP 客户端）
+- Skiko 0.7.27（图片渲染）
+- kotlinx.serialization 1.6.3（JSON 处理）
+- kotlinx.coroutines 1.8.0（协程）
 - OneBot v11 协议（NapCat）
 
 ### 项目特点
@@ -480,6 +499,23 @@ Windows 用户可使用自动化脚本简化操作：
    - 文档和示例配置
 
 ## 更新日志
+
+### v1.4 (2026-01-21)
+
+**功能增强**
+- ✅ 新增从分组移除订阅的命令
+- ✅ 新增日志清理机制
+
+**渲染与解析**
+- ✅ 优化影视类解析渲染模板
+- ✅ 更新直播链接解析模板
+- ✅ 调整命令相关显示效果
+
+**修复与维护**
+- ✅ 修复番剧订阅问题
+- ✅ 清理弃用配置并修复轮询配置项
+- ✅ 修复编译错误
+- ✅ 更新版本号显示与脚本版本号
 
 ### v1.3 (2026-01-09)
 
@@ -627,6 +663,23 @@ Windows 用户可使用自动化脚本简化操作：
 
    ```powershell
    java -jar dynamic-bot-1.4.jar --debug
+   ```
+
+1. **Docker 部署启用 Debug**
+
+   编辑挂载目录中的 `config/BiliConfig.yml`：
+
+   ```yaml
+   enableConfig:
+     debugMode: true
+   ```
+
+   重启容器：
+
+   ```bash
+   docker restart dynamic-bot
+   # 或
+   docker-compose restart
    ```
 2. **查看日志**
 
