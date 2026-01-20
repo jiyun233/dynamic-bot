@@ -138,7 +138,7 @@ docker run -d --name dynamic-bot \
 #### 基础命令
 - `/check` - 手动触发检查（测试用）
 - `/login` - B站扫码登录
-- `/bili help` - 显示此帮助 
+- `/bili help` - 显示帮助 
 
 #### 高级命令（/bili）
 订阅管理:

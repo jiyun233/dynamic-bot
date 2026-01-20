@@ -12,6 +12,8 @@ import top.bilibili.data.DynamicDetail
 import top.bilibili.data.LiveDetail
 import top.bilibili.data.BiliMessage
 import top.bilibili.api.userInfo
+import top.bilibili.api.getEpisodeInfo
+import top.bilibili.utils.ImageCache
 import kotlinx.coroutines.channels.Channel
 import java.io.File
 import java.io.InputStream
@@ -546,7 +548,7 @@ object BiliBiliBot : CoroutineScope {
             /bili add <UID|ss|md|ep> <群号> - 添加订阅到指定群
             /bili remove <UID|ss|md|ep> <群号> - 从指定群移除订阅
             /bili list - 查看当前群的订阅
-            /bili list <UID|ss|md> - 查看订阅推送到哪些群
+            /bili list <UID|ss|md|ep> - 查看订阅推送到哪些群
 
             分组管理:
             /bili group create <分组名> - 创建分组
@@ -555,7 +557,7 @@ object BiliBiliBot : CoroutineScope {
             /bili group remove <分组名> <群号> - 从分组移除群
             /bili group list [分组名] - 查看分组信息
             /bili group subscribe <分组名> <UID|ss|md|ep> - 订阅到分组
-            /bili group unsubscribe <分组名> <UID> - 从分组移除订阅
+            /bili group unsubscribe <分组名> <UID|ss|md|ep> - 从分组移除订阅
             /bili groups - 查看所有分组
 
             过滤器管理（支持黑名单与白名单）:
@@ -569,8 +571,42 @@ object BiliBiliBot : CoroutineScope {
             /bili help - 显示此帮助
         """.trimIndent()
 
-        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+        val imageSent = runCatching {
+            val imageUrl = getHelpImageFileUrl()
+            if (imageUrl != null) {
+                val imageSegments = listOf(MessageSegment.image(imageUrl))
+                if (isGroup) sendGroupMessage(contactId, imageSegments)
+                else sendPrivateMessage(contactId, imageSegments)
+            } else {
+                false
+            }
+        }.getOrDefault(false)
+
+        if (!imageSent) {
+            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+        }
+    }
+
+    private fun getHelpImageFileUrl(): String? {
+        val tempFile = tempPath.resolve("help.png").toFile()
+        if (!tempFile.exists()) {
+            val inputStream = getResourceAsStream("image/HELP.png")
+            if (inputStream == null) {
+                logger.warn("帮助图片资源不存在: image/HELP.png")
+                return null
+            }
+            tempFile.parentFile?.mkdirs()
+            try {
+                inputStream.use { stream ->
+                    tempFile.writeBytes(stream.readBytes())
+                }
+            } catch (e: Exception) {
+                logger.warn("写入帮助图片失败: ${e.message}")
+                return null
+            }
+        }
+        return ImageCache.toFileUrl(tempFile.absolutePath)
     }
 
     /** 处理 /bili add */
@@ -676,18 +712,28 @@ object BiliBiliBot : CoroutineScope {
             val id = args[1]
             if (top.bilibili.service.pgcRegex.matches(id)) {
                 val match = top.bilibili.service.pgcRegex.find(id)!!
-                val idType = match.groupValues[1]
-                val idValue = match.groupValues[2].toLong()
+                var idType = match.groupValues[1]
+                var idValue = match.groupValues[2].toLong()
+
+                if (idType == "ep") {
+                    val season = top.bilibili.service.client.getEpisodeInfo(idValue)
+                    if (season == null) {
+                        val msg = "获取番剧信息失败"
+                        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                        return
+                    }
+                    idType = "ss"
+                    idValue = season.seasonId
+                }
 
                 val bangumi = when (idType) {
                     "ss" -> top.bilibili.BiliData.bangumi[idValue]
                     "md" -> top.bilibili.BiliData.bangumi.values.firstOrNull { it.mediaId == idValue }
-                    "ep" -> null
                     else -> null
                 }
 
                 val msg = when (idType) {
-                    "ep" -> "无法通过 ep 查询，请使用 ss 或 md"
                     "ss", "md" -> {
                         if (bangumi == null) {
                             "没有订阅过番剧: ${idType}${idValue}"
@@ -949,10 +995,26 @@ object BiliBiliBot : CoroutineScope {
             .filter { it.startsWith("group:") }
             .map { it.removePrefix("group:") }
 
-        val msg = if (groups.isEmpty()) {
-            "分组: $groupName\n创建者: ${group.creator}\n当前没有任何群"
+        val subscriptions = group.contacts.flatMap { contact ->
+            val userSubscriptions = top.bilibili.BiliData.dynamic
+                .filter { contact in it.value.contacts }
+                .map { "${it.value.name} (UID: ${it.key})" }
+            val bangumiSubscriptions = top.bilibili.BiliData.bangumi
+                .filter { contact in it.value.contacts }
+                .map { "${it.value.title} (ss${it.value.seasonId})" }
+            userSubscriptions + bangumiSubscriptions
+        }.distinct()
+
+        val subscriptionText = if (subscriptions.isEmpty()) {
+            "订阅列表: 无"
         } else {
-            "分组: $groupName\n创建者: ${group.creator}\n包含群:\n${groups.joinToString("\n")}"
+            "订阅列表:\n${subscriptions.joinToString("\n")}"
+        }
+
+        val msg = if (groups.isEmpty()) {
+            "分组: $groupName\n创建者: ${group.creator}\n当前没有任何群\n$subscriptionText"
+        } else {
+            "分组: $groupName\n创建者: ${group.creator}\n包含群:\n${groups.joinToString("\n")}\n$subscriptionText"
         }
 
         if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
@@ -1040,21 +1102,14 @@ object BiliBiliBot : CoroutineScope {
 
     private suspend fun handleBiliGroupUnsubscribe(contactId: Long, args: List<String>, isGroup: Boolean) {
         if (args.size < 4) {
-            val msg = "用法: /bili group unsubscribe <分组名> <UID>"
+            val msg = "用法: /bili group unsubscribe <分组名> <UID|ss|md|ep>"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
             return
         }
 
         val groupName = args[2]
-        val uid = args[3].toLongOrNull()
-
-        if (uid == null) {
-            val msg = "UID 格式错误"
-            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
-            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
-            return
-        }
+        val id = args[3]
 
         val group = top.bilibili.BiliData.group[groupName]
         if (group == null) {
@@ -1076,7 +1131,18 @@ object BiliBiliBot : CoroutineScope {
 
         for (contact in group.contacts) {
             try {
-                val result = top.bilibili.service.DynamicService.removeSubscribe(uid, contact, isSelf = false)
+                val result = if (top.bilibili.service.pgcRegex.matches(id)) {
+                    top.bilibili.service.PgcService.delPgc(id, contact)
+                } else {
+                    val uid = id.toLongOrNull()
+                    if (uid == null) {
+                        val msg = "ID 格式错误"
+                        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                        return
+                    }
+                    top.bilibili.service.DynamicService.removeSubscribe(uid, contact, isSelf = false)
+                }
                 if (result.contains("成功")) {
                     removedCount++
                 } else if (firstError == null && (result.contains("失败") || result.contains("错误"))) {
@@ -1096,7 +1162,7 @@ object BiliBiliBot : CoroutineScope {
         } else {
             buildString {
                 appendLine("取消订阅操作完成！")
-                appendLine("UID: $uid")
+                appendLine("目标: $id")
                 appendLine("分组: $groupName")
                 appendLine("成功移除: $removedCount 个联系人")
                 if (firstError != null) {
