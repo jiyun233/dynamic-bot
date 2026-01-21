@@ -23,6 +23,7 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlin.io.path.*
 import kotlin.math.max
 import kotlin.math.min
@@ -76,32 +77,37 @@ fun Long.formatTime(template: String = "yyyy年MM月dd日 HH:mm"): String = Date
     .format(LocalDateTime.ofEpochSecond(this, 0, OffsetDateTime.now().offset))
 
 /**
- * 相对时间显示（开始时间专用）
- * 5分钟内：刚刚
- * 5-10分钟：5分钟前
- * 10-30分钟：10分钟前
- * 30-60分钟：30分钟前
- * 1-24小时：X小时前
- * 1-3天：X天前
- * 超过3天：显示具体时间
+ * 相对时间显示
+ * < 60 秒        → 刚刚
+ * < 60 分钟      → N 分钟前
+ * < 24 小时      → N 小时前
+ * 昨天           → 昨天 HH:mm
+ * 前天           → 前天 HH:mm
+ * < 7 天         → N 天前
+ * ≥ 7 天         → yyyy-MM-dd
  */
 val Long.formatRelativeTime: String
     get() {
         val now = Instant.now().epochSecond
         val diff = now - this
 
-        return when {
-            diff < 0 -> formatTime() // 未来时间，显示具体时间
-            diff < 300 -> "刚刚" // 5分钟内
-            diff < 600 -> "5分钟前" // 5-10分钟
-            diff < 1800 -> "10分钟前" // 10-30分钟
-            diff < 3600 -> "30分钟前" // 30-60分钟
-            diff < 7200 -> "1小时前" // 1-2小时
-            diff < 86400 -> "${diff / 3600}小时前" // 2-24小时
-            diff < 172800 -> "一天前" // 1-2天
-            diff < 259200 -> "两天前" // 2-3天
-            diff < 259201 -> "三天前" // 刚好3天
-            else -> formatTime() // 超过3天显示具体时间
+        if (diff < 0) return formatTime() // 未来时间
+
+        if (diff < 60) return "刚刚"
+        if (diff < 3600) return "${diff / 60}分钟前"
+        if (diff < 86400) return "${diff / 3600}小时前"
+
+        val zoneOffset = OffsetDateTime.now().offset
+        val nowDateTime = LocalDateTime.ofEpochSecond(now, 0, zoneOffset)
+        val targetDateTime = LocalDateTime.ofEpochSecond(this, 0, zoneOffset)
+
+        val daysDiff = ChronoUnit.DAYS.between(targetDateTime.toLocalDate(), nowDateTime.toLocalDate())
+
+        return when (daysDiff) {
+            1L -> "昨天 ${targetDateTime.format(DateTimeFormatter.ofPattern("HH:mm"))}"
+            2L -> "前天 ${targetDateTime.format(DateTimeFormatter.ofPattern("HH:mm"))}"
+            in 3L until 7L -> "${daysDiff}天前"
+            else -> targetDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
         }
     }
 
