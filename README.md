@@ -34,26 +34,25 @@
 
 ```
 dynamic-bot/
-├── src/main/kotlin/top/      # 源代码目录
-│   └── bilibili/
-│   ├── api/           # B站 API 接口
-│   ├── client/        # HTTP 客户端
-│   ├── config/        # 配置管理
-│   ├── core/          # 核心模块
-│   ├── data/          # 数据模型
-│   ├── draw/          # 图片渲染
-│   ├── napcat/        # NapCat 客户端
-│   ├── service/       # 业务服务
-│   ├── tasker/        # 定时任务
-│   ├── utils/         # 工具类
-│   ├── BiliConfig.kt  # 配置文件
-│   ├── BiliData.kt    # 数据文件
-│   └── Main.kt        # 程序入口
-├── src/main/resources/      # 资源文件
-│   └── font/         # 字体文件
-│   ├── icon/         # 图标文件
-│   ├── image/        # 图片文件
-│   └── logback.xml   # 日志文件
+├── src/main/kotlin/top/bilibili/      # 源代码目录
+│   └── api/               # B站 API 接口
+│   ├── client/            # HTTP 客户端
+│   ├── config/            # 配置管理
+│   ├── core/              # 核心模块
+│   ├── data/              # 数据模型
+│   ├── draw/              # 图片渲染
+│   ├── napcat/            # NapCat 客户端
+│   ├── service/           # 业务服务
+│   ├── tasker/            # 定时任务
+│   ├── utils/             # 工具类
+│   ├── BiliConfig.kt      # 配置文件
+│   ├── BiliData.kt        # 数据文件
+│   └── Main.kt            # 程序入口
+├── src/main/resources/               # 资源文件
+│   └── font/              # 字体文件
+│   ├── icon/              # 图标文件
+│   ├── image/             # 图片文件
+│   └── logback.xml        # 日志文件
 ├── gradle/                # Gradle wrapper
 ├── build.gradle.kts       # Gradle 构建脚本
 ├── settings.gradle.kts    # Gradle 设置
@@ -157,7 +156,7 @@ docker run -d --name dynamic-bot \
 - `/bili help` - 显示帮助 
 
 #### 高级命令（/bili）
-[查看 `/bili` 帮助图](docs/help.png)
+[查看 `/bili` 帮助大图](docs/help.png)
 
   <img src="docs/help.png" width="420" alt="高级命令预览">
 
@@ -225,7 +224,7 @@ dynamic:
 ```yaml
 admin: 0                        # 管理员 QQ 号
 enableConfig:                   # 启用配置
-  debugMode: false             # 启用调试模式
+  debugMode: false              # 启用调试模式
   drawEnable: true              # 启用绘制功能
   notifyEnable: true            # 启用通知功能
   liveCloseNotifyEnable: true   # 启用直播关播通知
@@ -294,11 +293,11 @@ cacheConfig:
     "OTHER": 7
 proxyConfig:
   proxy: []
-translateConfig:
-  cutLine: "\n\n〓〓〓 翻译 〓〓〓\n"
-  baidu:
-    APP_ID: ""
-    SECURITY_KEY: ""
+translateConfig:               # 翻译配置
+  cutLine: "\n\n〓〓〓 翻译 〓〓〓\n"     # 翻译结果分隔线
+  baidu:                       # 百度翻译配置
+    APP_ID: ""                 # 百度翻译 APP_ID
+    SECURITY_KEY: ""           # 百度翻译 SECURITY_KEY
 linkResolveConfig:             # 链接解析配置
   triggerMode: "At"            # 触发模式：At/Always/Never
   returnLink: false            # 是否返回链接
