@@ -1,4 +1,4 @@
-﻿package top.bilibili
+package top.bilibili
 
 import kotlinx.serialization.Serializable
 
@@ -12,7 +12,7 @@ object BiliData {
     var dataVersion: Int = 0
 
     // key: uid - 订阅信息
-    var dynamic: MutableMap<Long, SubData> = mutableMapOf(0L to SubData("ALL"))
+    var dynamic: MutableMap<Long, SubData> = mutableMapOf()
 
     // key: contact - 动态过滤
     var filter: MutableMap<String, MutableMap<Long, DynamicFilter>> = mutableMapOf()

@@ -19,20 +19,6 @@ import top.bilibili.utils.actionNotify
 object DynamicService {
     private val mutex = Mutex()
 
-    suspend fun listenAll(subject: String) = mutex.withLock {
-        dynamic.forEach { (_, sub) ->
-            if (subject in sub.contacts) {
-                sub.contacts.remove(subject)
-            }
-        }
-        val user = dynamic[0]
-        user?.contacts?.add(subject)
-    }
-
-    suspend fun cancelListen(subject: String) = mutex.withLock {
-        dynamic[0]?.contacts?.remove(subject)
-    }
-
     private suspend fun followUser(uid: Long): String? {
         if (uid == BiliBiliBot.uid) return null
 
@@ -81,7 +67,6 @@ object DynamicService {
 
     suspend fun addSubscribe(uid: Long, subject: String, isSelf: Boolean = true) = mutex.withLock {
         if (isFollow(uid, subject)) return@withLock "之前订阅过这个人哦"
-        if (dynamic[0]?.contacts?.contains(subject) == true) dynamic[0]?.contacts?.remove(subject)
 
         if (!dynamic.containsKey(uid)) {
             val un = if (BiliBiliBot.uid == uid) client.userInfo(uid)?.name!!

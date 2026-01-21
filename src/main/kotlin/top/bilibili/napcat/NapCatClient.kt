@@ -2,6 +2,7 @@ package top.bilibili.napcat
 
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
@@ -30,6 +31,10 @@ class NapCatClient(
     }
 
     private val client = HttpClient(OkHttp) {
+        install(HttpTimeout) {
+            connectTimeoutMillis = config.connectTimeout
+            requestTimeoutMillis = config.connectTimeout
+        }
         install(WebSockets) {
             pingIntervalMillis = config.heartbeatInterval
         }
@@ -281,10 +286,17 @@ class NapCatClient(
                 params.forEach { (key, value) ->
                     put(key, when (value) {
                         is Long -> kotlinx.serialization.json.JsonPrimitive(value)
-                        is List<*> -> json.encodeToJsonElement(
-                            kotlinx.serialization.builtins.ListSerializer(MessageSegment.serializer()),
-                            value as List<MessageSegment>
-                        )
+                        is List<*> -> {
+                            val segments = value as List<MessageSegment>
+                            if (config.messageFormat == "string" || config.messageFormat == "cqcode") {
+                                kotlinx.serialization.json.JsonPrimitive(segments.toCqCode())
+                            } else {
+                                json.encodeToJsonElement(
+                                    kotlinx.serialization.builtins.ListSerializer(MessageSegment.serializer()),
+                                    segments
+                                )
+                            }
+                        }
                         else -> kotlinx.serialization.json.JsonPrimitive(value.toString())
                     })
                 }
@@ -303,6 +315,26 @@ class NapCatClient(
         } catch (e: Exception) {
             logger.error("发送消息失败: ${e.message}", e)
             false
+        }
+    }
+
+    private fun List<MessageSegment>.toCqCode(): String {
+        return joinToString("") { segment ->
+            if (segment.type == "text") {
+                // 转义 CQ 码特殊字符
+                segment.data["text"]?.replace("&", "&amp;")
+                    ?.replace("[", "&#91;")
+                    ?.replace("]", "&#93;") ?: ""
+            } else {
+                val params = segment.data.entries.joinToString(",") { (k, v) ->
+                    val value = v.replace("&", "&amp;")
+                        .replace("[", "&#91;")
+                        .replace("]", "&#93;")
+                        .replace(",", "&#44;")
+                    "$k=$value"
+                }
+                "[CQ:${segment.type},$params]"
+            }
         }
     }
 
