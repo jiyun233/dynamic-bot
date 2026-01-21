@@ -1,4 +1,4 @@
-﻿package top.bilibili.client
+package top.bilibili.client
 
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -75,7 +75,12 @@ open class BiliClient : Closeable {
     private var clientIndex = 0
     private var proxyIndex = 0
 
+    private val logger = org.slf4j.LoggerFactory.getLogger(BiliClient::class.java)
+
     suspend fun <T> useHttpClient(block: suspend (HttpClient) -> T): T = supervisorScope {
+        var retryCount = 0
+        val maxRetries = 1
+        
         while (isActive) {
             try {
                 val client = clients[clientIndex]
@@ -86,8 +91,16 @@ open class BiliClient : Closeable {
                 return@supervisorScope block(client)
             } catch (throwable: Throwable) {
                 if (isActive && (throwable is IOException || throwable is HttpRequestTimeoutException)) {
+                    if (retryCount >= maxRetries) {
+                        logger.error("API请求重试耗尽 (${retryCount}/${maxRetries})，即将抛出异常: ${throwable.message}")
+                        throw throwable
+                    }
+                    logger.warn("API请求失败，3秒后进行第 ${retryCount + 1} 次重试: ${throwable.message}")
+                    retryCount++
+                    kotlinx.coroutines.delay(3000)
                     clientIndex = (clientIndex + 1) % clients.size
                 } else {
+                    logger.error("API请求发生不可重试异常: ${throwable.message}", throwable)
                     throw throwable
                 }
             }

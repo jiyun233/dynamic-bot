@@ -227,23 +227,39 @@ suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN)
         } else {
             cacheType.cacheFile(fileName)
         }
-         return if (filePath.exists()) {
+         if (filePath.exists()) {
             filePath.setLastModifiedTime(FileTime.from(Instant.now()))
-            filePath.readBytes()
+            return filePath.readBytes()
          } else if(url.startsWith("cache/")){
              return null
          }
          else {
-            try {
-                biliClient.useHttpClient {
-                    it.get(url).body<ByteArray>().apply {
-                        filePath.writeBytes(this)
+             var retryCount = 0
+             val maxRetries = 1
+             
+             while (retryCount <= maxRetries) {
+                 try {
+                    biliClient.useHttpClient {
+                        it.get(url).body<ByteArray>().apply {
+                            filePath.writeBytes(this)
+                        }
+                    }
+                    if (filePath.exists()) {
+                        filePath.setLastModifiedTime(FileTime.from(Instant.now()))
+                        return filePath.readBytes()
+                    }
+                }catch (t: Throwable) {
+                    logger.warn("下载资源失败 (尝试 ${retryCount + 1}/${maxRetries + 1}): $url")
+                    if (retryCount < maxRetries) {
+                        kotlinx.coroutines.delay(3000)
+                        retryCount++
+                    } else {
+                        logger.error("下载资源彻底失败! $url\n$t")
+                        return null
                     }
                 }
-            }catch (t: Throwable) {
-                logger.error("下载图片失败! $url\n$t")
-                return null
-            }
+             }
+             return null
         }
     }catch (t: Throwable) {
         logger.error("获取图片失败! $url\n$t")

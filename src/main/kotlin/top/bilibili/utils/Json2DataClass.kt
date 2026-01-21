@@ -28,9 +28,24 @@ suspend fun json2DataClassFile(url: String, baseClassName: String, path: Path) {
 
 suspend fun json2DataClass(url: String, baseClassName: String): String {
     val client = HttpClient(OkHttp)
-    val resStr = client.get(url).body<String>()
-    val resJson = json.parseToJsonElement(resStr)
-    return resJson.jsonObject.decodeJsonObject(baseClassName)
+    var retryCount = 0
+    val maxRetries = 1
+    
+    while (true) {
+        try {
+            val resStr = client.get(url).body<String>()
+            val resJson = json.parseToJsonElement(resStr)
+            return resJson.jsonObject.decodeJsonObject(baseClassName)
+        } catch (e: Exception) {
+            if (retryCount >= maxRetries) {
+                jsonLogger.error("请求最终失败，无法生成 Data Class: ${e.message}", e)
+                throw e
+            }
+            retryCount++
+            jsonLogger.warn("请求失败，3秒后重试 (第 $retryCount 次): ${e.message}")
+            kotlinx.coroutines.delay(3000)
+        }
+    }
 }
 
 

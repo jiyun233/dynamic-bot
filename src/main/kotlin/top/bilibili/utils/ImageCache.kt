@@ -106,19 +106,31 @@ object ImageCache {
      * 下载图片字节数据
      */
     private suspend fun downloadImage(url: String): ByteArray {
-        return try {
-            val response = httpClient.get(url)
+        var retryCount = 0
+        val maxRetries = 1
 
-            if (response.status == HttpStatusCode.OK) {
-                response.readRawBytes()
-            } else {
-                logger.warn("下载图片失败，HTTP状态码: ${response.status} - $url")
-                ByteArray(0)
+        while (retryCount <= maxRetries) {
+            try {
+                val response = httpClient.get(url)
+                if (response.status == HttpStatusCode.OK) {
+                    return response.readRawBytes()
+                } else {
+                    logger.warn("下载图片失败，HTTP状态码: ${response.status} - $url")
+                }
+            } catch (e: Exception) {
+                logger.warn("下载图片异常 (尝试 ${retryCount + 1}/${maxRetries + 1}): $url - ${e.message}")
             }
-        } catch (e: Exception) {
-            logger.error("下载图片异常: $url - ${e.message}")
-            ByteArray(0)
+
+            if (retryCount < maxRetries) {
+                kotlinx.coroutines.delay(3000)
+                retryCount++
+            } else {
+                break
+            }
         }
+        
+        logger.error("图片下载彻底失败 (已重试 $retryCount 次): $url")
+        return ByteArray(0)
     }
 
     /**

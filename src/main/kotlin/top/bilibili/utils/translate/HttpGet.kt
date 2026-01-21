@@ -24,47 +24,69 @@ internal object HttpGet {
     private val logger = LoggerFactory.getLogger(HttpGet::class.java)
 
     operator fun get(host: String, params: Map<String?, String?>?): String? {
-        try {
-            // 设置SSLContext
-            val sslcontext = SSLContext.getInstance("TLS")
-            sslcontext.init(null, arrayOf(myX509TrustManager), null)
-            val sendUrl = getUrlWithQueryString(host, params)
+        val maxRetries = 1
+        var retryCount = 0
+        
+        while (retryCount <= maxRetries) {
+            try {
+                // 设置SSLContext
+                val sslcontext = SSLContext.getInstance("TLS")
+                sslcontext.init(null, arrayOf(myX509TrustManager), null)
+                val sendUrl = getUrlWithQueryString(host, params)
 
-            // System.out.println("URL:" + sendUrl);
-            val uri = URL(sendUrl) // 创建URL对象
-            val conn = uri.openConnection() as HttpURLConnection
-            if (conn is HttpsURLConnection) {
-                conn.sslSocketFactory = sslcontext.socketFactory
-            }
-            conn.connectTimeout = SOCKET_TIMEOUT // 设置相应超时
-            conn.requestMethod = GET
-            val statusCode = conn.responseCode
-            if (statusCode != HttpURLConnection.HTTP_OK) {
-                logger.warn("Http错误码：$statusCode")
-            }
+                // System.out.println("URL:" + sendUrl);
+                val uri = URL(sendUrl) // 创建URL对象
+                val conn = uri.openConnection() as HttpURLConnection
+                if (conn is HttpsURLConnection) {
+                    conn.sslSocketFactory = sslcontext.socketFactory
+                }
+                conn.connectTimeout = SOCKET_TIMEOUT // 设置相应超时
+                conn.requestMethod = GET
+                val statusCode = conn.responseCode
+                if (statusCode != HttpURLConnection.HTTP_OK) {
+                    logger.warn("Http错误码：$statusCode")
+                }
 
-            // 读取服务器的数据
-            val `is` = conn.inputStream
-            val br = BufferedReader(InputStreamReader(`is`))
-            val builder = StringBuilder()
-            var line: String? = null
-            while (br.readLine().also { line = it } != null) {
-                builder.append(line)
+                // 读取服务器的数据
+                val `is` = conn.inputStream
+                val br = BufferedReader(InputStreamReader(`is`))
+                val builder = StringBuilder()
+                var line: String? = null
+                while (br.readLine().also { line = it } != null) {
+                    builder.append(line)
+                }
+                val text = builder.toString()
+                close(br) // 关闭数据流
+                close(`is`) // 关闭数据流
+                conn.disconnect() // 断开连接
+                return text
+            } catch (e: MalformedURLException) {
+                logger.warn("Http 请求地址无效: ${e.message}", e)
+                // 地址无效不需要重试
+                break
+            } catch (e: IOException) {
+                logger.warn("Http 请求失败 (尝试 ${retryCount + 1}/${maxRetries + 1}): ${e.message}")
+            } catch (e: KeyManagementException) {
+                logger.warn("Http SSL 初始化失败: ${e.message}", e)
+                // SSL 初始化失败重试可能无用，但也可以试一次
+            } catch (e: NoSuchAlgorithmException) {
+                logger.warn("Http 加密算法不可用: ${e.message}", e)
+                // 算法不可用不需要重试
+                break
             }
-            val text = builder.toString()
-            close(br) // 关闭数据流
-            close(`is`) // 关闭数据流
-            conn.disconnect() // 断开连接
-            return text
-        } catch (e: MalformedURLException) {
-            logger.warn("Http 请求地址无效: ${e.message}", e)
-        } catch (e: IOException) {
-            logger.warn("Http 请求失败: ${e.message}", e)
-        } catch (e: KeyManagementException) {
-            logger.warn("Http SSL 初始化失败: ${e.message}", e)
-        } catch (e: NoSuchAlgorithmException) {
-            logger.warn("Http 加密算法不可用: ${e.message}", e)
+            
+            if (retryCount < maxRetries) {
+                try {
+                    Thread.sleep(3000)
+                } catch (e: InterruptedException) {
+                    break
+                }
+                retryCount++
+            } else {
+                break
+            }
         }
+        logger.error("Http 请求彻底失败: $host")
         return null
     }
 

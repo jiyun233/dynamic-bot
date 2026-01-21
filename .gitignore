@@ -144,3 +144,4 @@ src/test/kotlin/RunTerminal.kt
 src/test/resources/output/**
 
 .claude/
+.trae/
