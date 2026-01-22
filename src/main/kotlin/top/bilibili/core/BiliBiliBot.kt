@@ -307,9 +307,9 @@ object BiliBiliBot : CoroutineScope {
             return
         }
 
-        // 处理订阅命令（仅管理员可用）
-        if (isSuperAdmin(userId) && message.trim().startsWith("/subscribe ")) {
-            val uid = message.trim().removePrefix("/subscribe ").trim().toLongOrNull()
+        // 处理快速订阅命令（仅管理员可用）
+        if (isSuperAdmin(userId) && message.trim().startsWith("/add ")) {
+            val uid = message.trim().removePrefix("/add ").trim().toLongOrNull()
             if (uid != null) {
                 handleSubscribe(groupId, uid, isGroup = true)
             } else {
@@ -318,9 +318,9 @@ object BiliBiliBot : CoroutineScope {
             return
         }
 
-        // 处理取消订阅命令（仅管理员可用）
-        if (isSuperAdmin(userId) && message.trim().startsWith("/unsubscribe ")) {
-            val uid = message.trim().removePrefix("/unsubscribe ").trim().toLongOrNull()
+        // 处理快速取消订阅命令（仅管理员可用）
+        if (isSuperAdmin(userId) && message.trim().startsWith("/del ")) {
+            val uid = message.trim().removePrefix("/del ").trim().toLongOrNull()
             if (uid != null) {
                 handleUnsubscribe(groupId, uid, isGroup = true)
             } else {
@@ -519,7 +519,7 @@ object BiliBiliBot : CoroutineScope {
         try {
             val args = message.substringAfter("/bili ").trim().split(Regex("\\s+"))
             if (args.isEmpty()) {
-                sendHelpMessage(contactId, isGroup)
+                sendHelpMessage(contactId, userId, isGroup)
                 return
             }
 
@@ -551,16 +551,16 @@ object BiliBiliBot : CoroutineScope {
         // 权限检查
         if (!isSuperAdmin(userId) && (!isGroup || !isGroupAdmin(contactId, userId))) return
 
-        val msg = """
-            /bili 命令帮助:
-
+        val isSuper = isSuperAdmin(userId)
+        val msg = if (isSuper) {
+            """
             订阅管理:
-            /bili add <UID|ss|md|ep> [群号] - 添加订阅 (普通管理员省略群号)
-            /bili remove <UID|ss|md|ep> [群号] - 移除订阅 (普通管理员省略群号)
+            /bili add <UID|ss|md|ep> [群号] - 添加订阅
+            /bili remove <UID|ss|md|ep> [群号] - 移除订阅
             /bili list - 查看当前群的订阅
-            /bili list <UID|ss|md|ep> - 查看订阅推送到哪些群 (仅超管)
+            /bili list <UID|ss|md|ep> - 查看订阅推送到哪些群
 
-            分组管理 (仅超管):
+            分组管理:
             /bili group create <分组名> - 创建分组
             /bili group delete <分组名> - 删除分组
             /bili group add <分组名> <群号> - 将群加入分组
@@ -570,13 +570,35 @@ object BiliBiliBot : CoroutineScope {
             /bili group unsubscribe <分组名> <UID|ss|md|ep> - 从分组移除订阅
             /bili groups - 查看所有分组
 
-            管理员管理 (仅超管):
+            过滤器管理:
+            /bili filter add <UID> <type|regex> <模式> <内容> - 添加过滤器
+              type模式: /bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>
+              regex模式: /bili filter add <UID> regex <black|white> <正则表达式>
+            /bili filter list <UID> - 查看过滤器
+            /bili filter del <UID> <索引> - 删除过滤器(如 t0, r1)
+
+            管理员管理:
             /bili admin add <QQ号> - 添加本群普通管理员
             /bili admin remove <QQ号> - 移除本群普通管理员
             /bili admin list - 查询本群管理员
             /bili admin all - 查询全部普通管理员
 
-            过滤器管理 (仅限本群已订UID):
+            其他:
+            /bili help - 显示此帮助
+            /login或 登录 - 扫码登录
+            /check - 手动触发检查
+            /add <UID> - 快速订阅
+            /del <UID> - 快速取消订阅
+            /list - 查看订阅列表
+            """.trimIndent()
+        } else {
+            """
+            订阅管理:
+            /bili add <UID|ss|md|ep> - 添加订阅
+            /bili remove <UID|ss|md|ep> - 移除订阅
+            /bili list - 查看当前群的订阅
+
+            过滤器管理:
             /bili filter add <UID> <type|regex> <模式> <内容> - 添加过滤器
               type模式: /bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>
               regex模式: /bili filter add <UID> regex <black|white> <正则表达式>
@@ -585,10 +607,12 @@ object BiliBiliBot : CoroutineScope {
 
             其他:
             /bili help - 显示此帮助
-        """.trimIndent()
+            """.trimIndent()
+        }
 
+        val imageName = if (isSuper) "admin_help.png" else "HELP.png"
         val imageSent = runCatching {
-            val imageUrl = getHelpImageFileUrl()
+            val imageUrl = getHelpImageFileUrl(imageName)
             if (imageUrl != null) {
                 val imageSegments = listOf(MessageSegment.image(imageUrl))
                 if (isGroup) sendGroupMessage(contactId, imageSegments)
@@ -604,12 +628,12 @@ object BiliBiliBot : CoroutineScope {
         }
     }
 
-    private fun getHelpImageFileUrl(): String? {
-        val tempFile = tempPath.resolve("help.png").toFile()
+    private fun getHelpImageFileUrl(imageName: String): String? {
+        val tempFile = tempPath.resolve(imageName).toFile()
         if (!tempFile.exists()) {
-            val inputStream = getResourceAsStream("image/HELP.png")
+            val inputStream = getResourceAsStream("image/$imageName")
             if (inputStream == null) {
-                logger.warn("帮助图片资源不存在: image/HELP.png")
+                logger.warn("帮助图片资源不存在: image/$imageName")
                 return null
             }
             tempFile.parentFile?.mkdirs()
@@ -896,7 +920,7 @@ object BiliBiliBot : CoroutineScope {
             "delete", "del" -> handleBiliGroupDelete(contactId, args, isGroup)
             "add" -> handleBiliGroupAdd(contactId, args, isGroup)
             "remove", "rm" -> handleBiliGroupRemove(contactId, args, isGroup)
-            "list", "ls" -> handleBiliGroupList(contactId, args, isGroup)
+            "list", "ls" -> handleBiliGroupList(contactId, userId, args, isGroup)
             "subscribe", "sub" -> handleBiliGroupSubscribe(contactId, args, isGroup)
             "unsubscribe", "unsub" -> handleBiliGroupUnsubscribe(contactId, args, isGroup)
             else -> {
@@ -1168,10 +1192,10 @@ object BiliBiliBot : CoroutineScope {
     }
 
     /** 查看分组信息 */
-    private suspend fun handleBiliGroupList(contactId: Long, args: List<String>, isGroup: Boolean) {
+    private suspend fun handleBiliGroupList(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
         if (args.size < 3) {
             // 查看所有分组
-            handleBiliListGroups(contactId, args, isGroup)
+            handleBiliListGroups(contactId, userId, args, isGroup)
             return
         }
 
