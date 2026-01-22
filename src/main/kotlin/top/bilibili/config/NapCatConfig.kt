@@ -73,6 +73,18 @@ data class TargetConfig(
 }
 
 /**
+ * 分群管理员配置
+ */
+@Serializable
+data class GroupAdminConfig(
+    /** 群号 */
+    val groupId: Long,
+    
+    /** 该群的管理员 QQ 号列表 */
+    val userIds: MutableList<Long> = mutableListOf()
+)
+
+/**
  * Bot 主配置
  */
 @Serializable
@@ -83,6 +95,6 @@ data class BotConfig(
     /** 推送目标列表 */
     val targets: MutableList<TargetConfig> = mutableListOf(),
 
-    /** 管理员 QQ 号列表 */
-    val admins: MutableList<Long> = mutableListOf()
+    /** 分群管理员配置列表 */
+    val admins: MutableList<GroupAdminConfig> = mutableListOf()
 )

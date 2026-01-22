@@ -299,7 +299,7 @@ object BiliBiliBot : CoroutineScope {
         logger.info("群消息 [$groupId] 来自 $userId: ${simplifyMessageForLog(message)}")
 
         // 处理登录命令（仅管理员可用）
-        if (isAdmin(userId) && (message.trim() == "/login" || message.trim() == "登录")) {
+        if (isSuperAdmin(userId) && (message.trim() == "/login" || message.trim() == "登录")) {
             logger.info("触发登录命令，准备发送二维码...")
             launch {
                 top.bilibili.service.LoginService.login(isGroup = true, contactId = groupId)
@@ -308,7 +308,7 @@ object BiliBiliBot : CoroutineScope {
         }
 
         // 处理订阅命令（仅管理员可用）
-        if (isAdmin(userId) && message.trim().startsWith("/subscribe ")) {
+        if (isSuperAdmin(userId) && message.trim().startsWith("/subscribe ")) {
             val uid = message.trim().removePrefix("/subscribe ").trim().toLongOrNull()
             if (uid != null) {
                 handleSubscribe(groupId, uid, isGroup = true)
@@ -319,7 +319,7 @@ object BiliBiliBot : CoroutineScope {
         }
 
         // 处理取消订阅命令（仅管理员可用）
-        if (isAdmin(userId) && message.trim().startsWith("/unsubscribe ")) {
+        if (isSuperAdmin(userId) && message.trim().startsWith("/unsubscribe ")) {
             val uid = message.trim().removePrefix("/unsubscribe ").trim().toLongOrNull()
             if (uid != null) {
                 handleUnsubscribe(groupId, uid, isGroup = true)
@@ -330,13 +330,13 @@ object BiliBiliBot : CoroutineScope {
         }
 
         // 处理订阅列表查询命令（仅管理员可用）
-        if (isAdmin(userId) && message.trim() == "/list") {
+        if (isSuperAdmin(userId) && message.trim() == "/list") {
             handleListSubscriptions(groupId, isGroup = true)
             return
         }
 
         // 处理手动触发检查命令（仅管理员可用，用于测试）
-        if (isAdmin(userId) && message.trim() == "/check") {
+        if (isSuperAdmin(userId) && message.trim() == "/check") {
             sendGroupMessage(groupId, listOf(MessageSegment.text("正在检查订阅...")))
             launch {
                 try {
@@ -356,7 +356,7 @@ object BiliBiliBot : CoroutineScope {
         }
 
         // 处理 /bili 命令系统（仅管理员可用）
-        if (isAdmin(userId) && message.trim().startsWith("/bili ")) {
+        if ((isSuperAdmin(userId) || isGroupAdmin(groupId, userId)) && message.trim().startsWith("/bili ")) {
             handleBiliCommand(groupId, userId, message.trim(), isGroup = true)
             return
         }
@@ -370,7 +370,7 @@ object BiliBiliBot : CoroutineScope {
         logger.info("私聊消息 来自 $userId: ${simplifyMessageForLog(message)}")
 
         // 处理登录命令（仅管理员可用）
-        if (isAdmin(userId) && (message.trim() == "/login" || message.trim() == "登录")) {
+        if (isSuperAdmin(userId) && (message.trim() == "/login" || message.trim() == "登录")) {
             logger.info("触发登录命令，准备发送二维码...")
             launch {
                 top.bilibili.service.LoginService.login(isGroup = false, contactId = userId)
@@ -381,9 +381,15 @@ object BiliBiliBot : CoroutineScope {
         // TODO: 实现其他私聊命令处理
     }
 
-    /** 检查是否为管理员 */
-    private fun isAdmin(userId: Long): Boolean {
+    /** 检查是否为超级管理员 */
+    private fun isSuperAdmin(userId: Long): Boolean {
         return userId == BiliConfigManager.config.admin
+    }
+
+    /** 检查是否为当前群的普通管理员 */
+    private fun isGroupAdmin(groupId: Long, userId: Long): Boolean {
+        val groupConfig = ConfigManager.botConfig.admins.find { it.groupId == groupId }
+        return groupConfig?.userIds?.contains(userId) == true
     }
 
     /** 处理订阅 */
@@ -518,13 +524,14 @@ object BiliBiliBot : CoroutineScope {
             }
 
             when (args[0].lowercase()) {
-                "add" -> handleBiliAdd(contactId, args, isGroup)
-                "remove", "rm" -> handleBiliRemove(contactId, args, isGroup)
-                "list", "ls" -> handleBiliList(contactId, args, isGroup)
-                "groups" -> handleBiliListGroups(contactId, args, isGroup)
+                "add" -> handleBiliAdd(contactId, userId, args, isGroup)
+                "remove", "rm" -> handleBiliRemove(contactId, userId, args, isGroup)
+                "list", "ls" -> handleBiliList(contactId, userId, args, isGroup)
+                "groups" -> handleBiliListGroups(contactId, userId, args, isGroup)
                 "group" -> handleBiliGroupCommand(contactId, userId, args, isGroup)
-                "filter" -> handleBiliFilterCommand(contactId, args, isGroup)
-                "help" -> sendHelpMessage(contactId, isGroup)
+                "filter" -> handleBiliFilterCommand(contactId, userId, args, isGroup)
+                "admin" -> handleBiliAdminCommand(contactId, userId, args, isGroup)
+                "help" -> sendHelpMessage(contactId, userId, isGroup)
                 else -> {
                     val msg = "未知命令: ${args[0]}\n使用 /bili help 查看帮助"
                     if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
@@ -540,17 +547,20 @@ object BiliBiliBot : CoroutineScope {
     }
 
     /** 发送帮助信息 */
-    private suspend fun sendHelpMessage(contactId: Long, isGroup: Boolean) {
+    private suspend fun sendHelpMessage(contactId: Long, userId: Long, isGroup: Boolean) {
+        // 权限检查
+        if (!isSuperAdmin(userId) && (!isGroup || !isGroupAdmin(contactId, userId))) return
+
         val msg = """
             /bili 命令帮助:
 
             订阅管理:
-            /bili add <UID|ss|md|ep> <群号> - 添加订阅到指定群
-            /bili remove <UID|ss|md|ep> <群号> - 从指定群移除订阅
+            /bili add <UID|ss|md|ep> [群号] - 添加订阅 (普通管理员省略群号)
+            /bili remove <UID|ss|md|ep> [群号] - 移除订阅 (普通管理员省略群号)
             /bili list - 查看当前群的订阅
-            /bili list <UID|ss|md|ep> - 查看订阅推送到哪些群
+            /bili list <UID|ss|md|ep> - 查看订阅推送到哪些群 (仅超管)
 
-            分组管理:
+            分组管理 (仅超管):
             /bili group create <分组名> - 创建分组
             /bili group delete <分组名> - 删除分组
             /bili group add <分组名> <群号> - 将群加入分组
@@ -560,7 +570,13 @@ object BiliBiliBot : CoroutineScope {
             /bili group unsubscribe <分组名> <UID|ss|md|ep> - 从分组移除订阅
             /bili groups - 查看所有分组
 
-            过滤器管理（支持黑名单与白名单）:
+            管理员管理 (仅超管):
+            /bili admin add <QQ号> - 添加本群普通管理员
+            /bili admin remove <QQ号> - 移除本群普通管理员
+            /bili admin list - 查询本群管理员
+            /bili admin all - 查询全部普通管理员
+
+            过滤器管理 (仅限本群已订UID):
             /bili filter add <UID> <type|regex> <模式> <内容> - 添加过滤器
               type模式: /bili filter add <UID> type <black|white> <动态|转发动态|视频|音乐|专栏|直播>
               regex模式: /bili filter add <UID> regex <black|white> <正则表达式>
@@ -610,19 +626,43 @@ object BiliBiliBot : CoroutineScope {
     }
 
     /** 处理 /bili add */
-    private suspend fun handleBiliAdd(contactId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size < 3) {
-            val msg = "用法: /bili add <UID|ss|md|ep> <群号>\n示例: /bili add 123456 987654321"
+    private suspend fun handleBiliAdd(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
+        // 私聊非超管直接忽略
+        if (!isGroup && !isSuperAdmin(userId)) return
+
+        if (args.size < 2) {
+            val msg = "用法: /bili add <UID|ss|md|ep> [群号]"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
             return
         }
 
         val id = args[1]
-        val targetGroupId = args[2].toLongOrNull()
+        var targetGroupId: Long? = null
+
+        if (args.size == 2) {
+            // 简短模式: /bili add <UID> -> 目标为当前群
+            if (isSuperAdmin(userId) || isGroupAdmin(contactId, userId)) {
+                targetGroupId = contactId
+            } else {
+                return // 无权
+            }
+        } else {
+            // 指定模式: /bili add <UID> <群号> -> 仅超管
+            if (isSuperAdmin(userId)) {
+                targetGroupId = args[2].toLongOrNull()
+            } else {
+                if (isGroupAdmin(contactId, userId)) {
+                    val msg = "普通管理员请使用简短格式: /bili add <UID> (无需群号)"
+                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                }
+                return
+            }
+        }
 
         if (targetGroupId == null) {
-            val msg = "UID 或群号格式错误"
+            val msg = "群号格式错误"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
             return
@@ -634,7 +674,7 @@ object BiliBiliBot : CoroutineScope {
         } else {
             val uid = id.toLongOrNull()
             if (uid == null) {
-                val msg = "UID 或群号格式错误"
+                val msg = "UID 格式错误"
                 if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
                 else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
                 return
@@ -649,19 +689,43 @@ object BiliBiliBot : CoroutineScope {
     }
 
     /** 处理 /bili remove */
-    private suspend fun handleBiliRemove(contactId: Long, args: List<String>, isGroup: Boolean) {
-        if (args.size < 3) {
-            val msg = "用法: /bili remove <UID|ss|md|ep> <群号>\n示例: /bili remove 123456 987654321"
+    private suspend fun handleBiliRemove(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
+        // 私聊非超管直接忽略
+        if (!isGroup && !isSuperAdmin(userId)) return
+
+        if (args.size < 2) {
+            val msg = "用法: /bili remove <UID|ss|md|ep> [群号]"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
             return
         }
 
         val id = args[1]
-        val targetGroupId = args[2].toLongOrNull()
+        var targetGroupId: Long? = null
+
+        if (args.size == 2) {
+            // 简短模式: /bili remove <UID> -> 目标为当前群
+            if (isSuperAdmin(userId) || isGroupAdmin(contactId, userId)) {
+                targetGroupId = contactId
+            } else {
+                return // 无权
+            }
+        } else {
+            // 指定模式: /bili remove <UID> <群号> -> 仅超管
+            if (isSuperAdmin(userId)) {
+                targetGroupId = args[2].toLongOrNull()
+            } else {
+                if (isGroupAdmin(contactId, userId)) {
+                    val msg = "普通管理员请使用简短格式: /bili remove <UID> (无需群号)"
+                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                }
+                return
+            }
+        }
 
         if (targetGroupId == null) {
-            val msg = "UID 或群号格式错误"
+            val msg = "群号格式错误"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
             return
@@ -673,7 +737,7 @@ object BiliBiliBot : CoroutineScope {
         } else {
             val uid = id.toLongOrNull()
             if (uid == null) {
-                val msg = "UID 或群号格式错误"
+                val msg = "UID 格式错误"
                 if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
                 else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
                 return
@@ -688,9 +752,10 @@ object BiliBiliBot : CoroutineScope {
     }
 
     /** 处理 /bili list */
-    private suspend fun handleBiliList(contactId: Long, args: List<String>, isGroup: Boolean) {
+    private suspend fun handleBiliList(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
         if (args.size == 1) {
             // 查看当前群的订阅
+            // 权限: 已由入口 handleGroupMessage 保证 (isSuperAdmin || isGroupAdmin)
             val contactStr = "group:$contactId"
             val userSubscriptions = top.bilibili.BiliData.dynamic
                 .filter { contactStr in it.value.contacts }
@@ -709,6 +774,14 @@ object BiliBiliBot : CoroutineScope {
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
             else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
         } else {
+            // 查看指定 UID 推送到哪些群 (涉及隐私，仅超管)
+            if (!isSuperAdmin(userId)) {
+                val msg = "权限不足: 仅超级管理员可查看推送范围"
+                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                return
+            }
+
             val id = args[1]
             if (top.bilibili.service.pgcRegex.matches(id)) {
                 val match = top.bilibili.service.pgcRegex.find(id)!!
@@ -789,7 +862,9 @@ object BiliBiliBot : CoroutineScope {
     }
 
     /** 处理 /bili groups */
-    private suspend fun handleBiliListGroups(contactId: Long, args: List<String>, isGroup: Boolean) {
+    private suspend fun handleBiliListGroups(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
+        if (!isSuperAdmin(userId)) return // 仅超管
+
         val groups = top.bilibili.BiliData.group
 
         val msg = if (groups.isEmpty()) {
@@ -807,6 +882,8 @@ object BiliBiliBot : CoroutineScope {
 
     /** 处理 /bili group 命令 */
     private suspend fun handleBiliGroupCommand(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
+        if (!isSuperAdmin(userId)) return // 仅超管
+
         if (args.size < 2) {
             val msg = "用法: /bili group <create|delete|add|remove|list|subscribe|unsubscribe>"
             if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
@@ -822,6 +899,123 @@ object BiliBiliBot : CoroutineScope {
             "list", "ls" -> handleBiliGroupList(contactId, args, isGroup)
             "subscribe", "sub" -> handleBiliGroupSubscribe(contactId, args, isGroup)
             "unsubscribe", "unsub" -> handleBiliGroupUnsubscribe(contactId, args, isGroup)
+            else -> {
+                val msg = "未知子命令: ${args[1]}"
+                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            }
+        }
+    }
+
+    /** 处理 /bili admin 命令 */
+    private suspend fun handleBiliAdminCommand(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
+        if (!isSuperAdmin(userId)) return // 仅超管
+
+        if (args.size < 2) {
+            val msg = """
+                用法:
+                /bili admin add <QQ号> - 添加本群普通管理员
+                /bili admin remove <QQ号> - 移除本群普通管理员
+                /bili admin list - 查询本群管理员
+                /bili admin all - 查询全部普通管理员
+            """.trimIndent()
+            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            return
+        }
+
+        when (args[1].lowercase()) {
+            "add" -> {
+                if (!isGroup) {
+                    sendPrivateMessage(contactId, listOf(MessageSegment.text("请在群聊中使用此命令")))
+                    return
+                }
+                if (args.size < 3) {
+                    sendGroupMessage(contactId, listOf(MessageSegment.text("用法: /bili admin add <QQ号>")))
+                    return
+                }
+                val targetId = args[2].toLongOrNull()
+                if (targetId == null) {
+                    sendGroupMessage(contactId, listOf(MessageSegment.text("QQ号格式错误")))
+                    return
+                }
+
+                val admins = ConfigManager.botConfig.admins
+                var groupConfig = admins.find { it.groupId == contactId }
+                if (groupConfig == null) {
+                    groupConfig = top.bilibili.config.GroupAdminConfig(contactId)
+                    admins.add(groupConfig)
+                }
+
+                if (targetId in groupConfig.userIds) {
+                    sendGroupMessage(contactId, listOf(MessageSegment.text("用户 $targetId 已经是本群管理员")))
+                    return
+                }
+
+                groupConfig.userIds.add(targetId)
+                ConfigManager.saveConfig()
+                sendGroupMessage(contactId, listOf(MessageSegment.text("已将 $targetId 添加为本群普通管理员")))
+            }
+            "remove", "rm" -> {
+                if (!isGroup) {
+                    sendPrivateMessage(contactId, listOf(MessageSegment.text("请在群聊中使用此命令")))
+                    return
+                }
+                if (args.size < 3) {
+                    sendGroupMessage(contactId, listOf(MessageSegment.text("用法: /bili admin remove <QQ号>")))
+                    return
+                }
+                val targetId = args[2].toLongOrNull()
+                if (targetId == null) {
+                    sendGroupMessage(contactId, listOf(MessageSegment.text("QQ号格式错误")))
+                    return
+                }
+
+                val groupConfig = ConfigManager.botConfig.admins.find { it.groupId == contactId }
+                if (groupConfig == null || targetId !in groupConfig.userIds) {
+                    sendGroupMessage(contactId, listOf(MessageSegment.text("用户 $targetId 不是本群管理员")))
+                    return
+                }
+
+                groupConfig.userIds.remove(targetId)
+                // 如果该群没有管理员了，可以选择移除该群配置，也可以保留
+                if (groupConfig.userIds.isEmpty()) {
+                    ConfigManager.botConfig.admins.remove(groupConfig)
+                }
+                ConfigManager.saveConfig()
+                sendGroupMessage(contactId, listOf(MessageSegment.text("已移除 $targetId 的本群普通管理员身份")))
+            }
+            "list", "ls" -> {
+                if (!isGroup) {
+                    sendPrivateMessage(contactId, listOf(MessageSegment.text("请在群聊中使用此命令")))
+                    return
+                }
+                val groupConfig = ConfigManager.botConfig.admins.find { it.groupId == contactId }
+                if (groupConfig == null || groupConfig.userIds.isEmpty()) {
+                    sendGroupMessage(contactId, listOf(MessageSegment.text("本群暂无普通管理员")))
+                } else {
+                    sendGroupMessage(contactId, listOf(MessageSegment.text("本群普通管理员: ${groupConfig.userIds.joinToString("、")}")))
+                }
+            }
+            "all" -> {
+                val admins = ConfigManager.botConfig.admins
+                if (admins.isEmpty()) {
+                    val msg = "暂无任何普通管理员"
+                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                } else {
+                    val sb = StringBuilder()
+                    admins.forEach { config ->
+                        if (config.userIds.isNotEmpty()) {
+                            sb.append("群聊：${config.groupId}群聊\n")
+                            sb.append("普通管理员：${config.userIds.joinToString("、")}\n")
+                        }
+                    }
+                    val msg = sb.toString().trim()
+                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                }
+            }
             else -> {
                 val msg = "未知子命令: ${args[1]}"
                 if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
@@ -1176,7 +1370,10 @@ object BiliBiliBot : CoroutineScope {
     }
 
     /** 处理 /bili filter 命令 */
-    private suspend fun handleBiliFilterCommand(contactId: Long, args: List<String>, isGroup: Boolean) {
+    private suspend fun handleBiliFilterCommand(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
+        // 权限: 超级管理员 或 当前群普通管理员
+        if (!isSuperAdmin(userId) && (!isGroup || !isGroupAdmin(contactId, userId))) return
+
         if (args.size < 2) {
             val msg = """
                 用法:
