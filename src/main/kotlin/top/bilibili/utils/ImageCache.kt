@@ -50,7 +50,12 @@ object ImageCache {
 
             // 生成缓存文件名（使用 URL 的 MD5 哈希值）
             val hash = md5(url)
-            val extension = url.substringAfterLast('.', "png").take(4)
+            // 安全清理文件扩展名，使用白名单验证
+            val rawExtension = url.substringAfterLast('.', "png").take(4).lowercase()
+            val extension = when {
+                rawExtension in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp") -> rawExtension
+                else -> "png" // 默认使用 png
+            }
             val cacheFile = File(cacheDir, "$hash.$extension")
 
             // 如果缓存已存在且未过期（24小时），直接返回

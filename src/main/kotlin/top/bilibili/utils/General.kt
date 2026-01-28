@@ -28,6 +28,29 @@ import kotlin.io.path.*
 import kotlin.math.max
 import kotlin.math.min
 
+/**
+ * 安全清理文件名，防止路径遍历攻击
+ * 移除路径分隔符和相对路径字符
+ */
+private fun sanitizeFileName(fileName: String): String {
+    // 移除路径遍历字符
+    var safe = fileName.replace("..", "")
+        .replace("/", "")
+        .replace("\\", "")
+        .replace("\u0000", "")
+
+    // 如果清理后为空，使用默认名称
+    if (safe.isBlank()) {
+        safe = "file_${System.currentTimeMillis()}"
+    }
+
+    // 限制文件名长度
+    if (safe.length > 200) {
+        safe = safe.takeLast(200)
+    }
+
+    return safe
+}
 
 internal val logger by lazy {
     BiliBiliBot.logger
@@ -226,7 +249,9 @@ fun cacheImage(image: Image, path: String, cacheType: CacheType): String {
 
 suspend fun getOrDownload(url: String, cacheType: CacheType = CacheType.UNKNOWN): ByteArray? {
      try {
-        val fileName = url.split("?").first().split("@").first().split("/").last()
+        // 安全清理文件名，防止路径遍历攻击
+        val rawFileName = url.split("?").first().split("@").first().split("/").last()
+        val fileName = sanitizeFileName(rawFileName)
 
         val filePath = if (cacheType == CacheType.UNKNOWN) {
             cachePath.findFile(fileName) ?: CacheType.OTHER.cacheFile(fileName)
