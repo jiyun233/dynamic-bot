@@ -59,7 +59,7 @@ open class BiliClient : Closeable {
     suspend inline fun <reified T> get(url: String, crossinline block: HttpRequestBuilder.() -> Unit = {}): T =
         useHttpClient<String> {
             it.get(url) {
-                header(HttpHeaders.Cookie, BiliBiliBot.cookie.toString() + "DedeUserID=" + BiliBiliBot.uid)
+                header(HttpHeaders.Cookie, BiliBiliBot.cookie.toHeaderString() + "DedeUserID=" + BiliBiliBot.uid)
                 block()
             }.body()
         }.decode()
@@ -67,7 +67,7 @@ open class BiliClient : Closeable {
     suspend inline fun <reified T> post(url: String, crossinline block: HttpRequestBuilder.() -> Unit = {}): T =
         useHttpClient<String> {
             it.post(url) {
-                header(HttpHeaders.Cookie, BiliBiliBot.cookie.toString() + "DedeUserID=" + BiliBiliBot.uid)
+                header(HttpHeaders.Cookie, BiliBiliBot.cookie.toHeaderString() + "DedeUserID=" + BiliBiliBot.uid)
                 block()
             }.body()
         }.decode()

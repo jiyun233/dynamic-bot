@@ -21,7 +21,29 @@ data class BiliCookie(
 
     fun isEmpty(): Boolean = sessData == "" && biliJct == ""
 
+    /**
+     * 脱敏显示 Cookie 信息（用于日志输出）
+     * 安全修复：防止敏感信息在日志中完整泄露
+     */
     override fun toString(): String {
+        val maskedSessData = if (sessData.length > 8) {
+            sessData.take(8) + "***"
+        } else {
+            "***"
+        }
+        val maskedBiliJct = if (biliJct.length > 4) {
+            biliJct.take(4) + "***"
+        } else {
+            "***"
+        }
+        return "BiliCookie(SESSDATA=$maskedSessData, bili_jct=$maskedBiliJct)"
+    }
+
+    /**
+     * 获取完整的 Cookie 字符串用于 HTTP 请求头
+     * 仅在实际发送请求时调用此方法
+     */
+    fun toHeaderString(): String {
         return "SESSDATA=$sessData; bili_jct=$biliJct; "
     }
 }
