@@ -33,6 +33,11 @@ COPY build/libs/dynamic-bot-1.4.1.jar /app/bot.jar
 # 创建必要的目录
 RUN mkdir -p /app/config /app/data /app/temp /app/logs
 
+# 创建非 root 用户运行应用（安全加固）
+RUN groupadd -r botuser && \
+    useradd -r -g botuser -u 1000 -d /app -s /bin/false botuser && \
+    chown -R botuser:botuser /app
+
 # 设置时区为上海
 ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -45,6 +50,9 @@ ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:+UseContainerSupport"
 
 # 设置虚拟显示环境
 ENV DISPLAY=:99
+
+# 切换到非 root 用户
+USER botuser
 
 # 启动命令（使用 xvfb-run 提供虚拟显示）
 ENTRYPOINT ["sh", "-c", "Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 & java $JAVA_OPTS -jar /app/bot.jar"]
