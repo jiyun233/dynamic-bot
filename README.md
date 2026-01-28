@@ -500,6 +500,24 @@ Windows 用户可使用自动化脚本简化操作：
 
 ## 更新日志
 
+### v1.4.2 (2026-01-28)
+
+**安全修复** 🔒
+- ✅ 修复配置保存时敏感信息日志泄露 (CWE-532)
+  - 移除 `BiliConfigManager.saveData()` 中输出 YAML 内容的日志
+  - 改为仅记录数据大小的 debug 级别日志
+- ✅ 修复 `BiliCookie.toString()` 敏感信息暴露
+  - `toString()` 方法现在只显示前几位字符，其余用 *** 替代
+  - 新增 `toHeaderString()` 方法用于实际 HTTP 请求
+  - 防止 Cookie 在日志中完整泄露
+- ✅ Docker 容器安全加固
+  - 容器改为使用非 root 用户 (botuser, UID 1000) 运行
+  - 符合 Docker 安全最佳实践，降低容器逃逸风险
+
+**文档更新** 📝
+- ✅ 新增 `docs/SECURITY.md` 安全配置和最佳实践文档
+- ✅ README.md 添加安全提示章节
+
 ### v1.4 (2026-01-21)
 
 **功能增强**
