@@ -17,6 +17,10 @@ data class NapCatConfig(
     /** 访问令牌（可选） */
     val token: String = "",
 
+    /** 是否使用 TLS 加密连接 (wss://) */
+    @SerialName("use_tls")
+    val useTls: Boolean = false,
+
     /** 心跳间隔（毫秒） */
     @SerialName("heartbeat_interval")
     val heartbeatInterval: Long = 30000,
@@ -39,7 +43,8 @@ data class NapCatConfig(
 ) {
     /** 获取完整的 WebSocket URL */
     fun getWebSocketUrl(): String {
-        return "ws://$host:$port"
+        val protocol = if (useTls) "wss" else "ws"
+        return "$protocol://$host:$port"
     }
 
     /** 检查配置是否有效 */
