@@ -48,7 +48,7 @@ class NapCatClient(
     val eventFlow = _eventFlow.asSharedFlow()
 
     private var session: DefaultClientWebSocketSession? = null
-    private val sendChannel = Channel<String>(Channel.UNLIMITED)
+    private val sendChannel = Channel<String>(capacity = 1000)
 
     /** Bot 的 QQ 号 */
     var selfId: Long = 0L
@@ -191,13 +191,22 @@ class NapCatClient(
 
         // 包含 CQ 码，需要简化
         val result = StringBuilder()
-        val cqPattern = """\[CQ:([^,\]]+).*?\]""".toRegex()
+
+        // 修复：限制输入长度防止 ReDoS
+        val safeMessage = if (rawMessage.length > 10000) {
+            logger.warn("消息过长 (${rawMessage.length} 字符)，截断处理")
+            rawMessage.take(10000)
+        } else {
+            rawMessage
+        }
+
+        val cqPattern = """\[CQ:([^,\]]+)(?:,[^\]]+)?\]""".toRegex()
 
         var lastIndex = 0
-        cqPattern.findAll(rawMessage).forEach { match ->
+        cqPattern.findAll(safeMessage).forEach { match ->
             // 添加 CQ 码之前的文本
             if (match.range.first > lastIndex) {
-                result.append(rawMessage.substring(lastIndex, match.range.first))
+                result.append(safeMessage.substring(lastIndex, match.range.first))
             }
 
             // 简化 CQ 码
@@ -219,8 +228,8 @@ class NapCatClient(
         }
 
         // 添加最后的文本
-        if (lastIndex < rawMessage.length) {
-            result.append(rawMessage.substring(lastIndex))
+        if (lastIndex < safeMessage.length) {
+            result.append(safeMessage.substring(lastIndex))
         }
 
         // 限制总长度
