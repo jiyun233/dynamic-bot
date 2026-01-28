@@ -108,9 +108,65 @@ object ImageCache {
     }
 
     /**
+     * 检测 URL 是否指向内网地址
+     * 防止 SSRF 攻击
+     */
+    private fun isPrivateNetwork(url: String): Boolean {
+        // 允许本地缓存文件
+        if (url.startsWith("cache/") || url.startsWith("file://")) {
+            return false
+        }
+
+        return try {
+            val host = url.substringAfter("://").substringBefore("/").substringBefore(":").lowercase()
+
+            // 检查是否为 IP 地址
+            if (host.matches(Regex("""\d+\.\d+\.\d+\.\d+"""))) {
+                // IPv4 私有地址段
+                val parts = host.split(".").map { it.toIntOrNull() ?: 0 }
+                if (parts.size == 4) {
+                    // 10.0.0.0/8
+                    if (parts[0] == 10) return true
+                    // 172.16.0.0/12
+                    if (parts[0] == 172 && parts[1] in 16..31) return true
+                    // 192.168.0.0/16
+                    if (parts[0] == 192 && parts[1] == 168) return true
+                    // 127.0.0.0/8 (localhost)
+                    if (parts[0] == 127) return true
+                    // 169.254.0.0/16 (link-local)
+                    if (parts[0] == 169 && parts[1] == 254) return true
+                    // 0.0.0.0/8
+                    if (parts[0] == 0) return true
+                }
+            }
+
+            // 检查是否为 localhost 域名
+            if (host == "localhost" || host.endsWith(".local")) {
+                return true
+            }
+
+            // 检查是否为内网域名模式
+            if (host.startsWith("192.168.") || host.startsWith("10.") || host.startsWith("172.")) {
+                return true
+            }
+
+            false
+        } catch (e: Exception) {
+            // 解析失败，保守起见认为是内网地址
+            true
+        }
+    }
+
+    /**
      * 下载图片字节数据
      */
     private suspend fun downloadImage(url: String): ByteArray {
+        // 修复：拒绝内网地址访问
+        if (isPrivateNetwork(url)) {
+            logger.warn("拒绝下载内网 URL (SSRF 防护): $url")
+            return ByteArray(0)
+        }
+
         var retryCount = 0
         val maxRetries = 1
 
