@@ -11,6 +11,7 @@ import top.bilibili.utils.sendAll
 import top.bilibili.utils.time
 import top.bilibili.utils.logger
 import java.time.Instant
+import java.io.File
 
 object DynamicCheckTasker : BiliCheckTasker("Dynamic") {
 
@@ -30,18 +31,38 @@ object DynamicCheckTasker : BiliCheckTasker("Dynamic") {
         //DynamicType.DYNAMIC_TYPE_PGC_UNION
     )
 
-    private const val capacity = 200
-    private val historyDynamic = ArrayList<String>(capacity)
-    private var lastIndex = 0
+    private const val HISTORY_CAPACITY = 200
+    private val historyDynamic = ArrayDeque<String>(HISTORY_CAPACITY)
+    private val historyFile = File("data/dynamic_history.txt")
 
     // 初始化为当前时间减去10分钟，避免首次启动推送大量旧动态
     private var lastDynamic: Long = Instant.now().epochSecond - 600
 
+    override fun init() {
+        super.init()
+        // ✅ 初始化时加载历史记录
+        if (historyFile.exists()) {
+            try {
+                historyFile.readLines()
+                    .takeLast(HISTORY_CAPACITY)
+                    .forEach { historyDynamic.addLast(it) }
+                logger.info("已加载 ${historyDynamic.size} 条动态历史记录")
+            } catch (e: Exception) {
+                logger.error("加载动态历史记录失败", e)
+            }
+        }
+    }
+
     override suspend fun main() = withTimeout(180001) {
+        // ✅ 优化：无订阅时跳过 API 调用
+        val followingUsers = dynamic.filter { it.value.contacts.isNotEmpty() }.map { it.key }
+        if (followingUsers.isEmpty() && bangumi.isEmpty()) {
+            logger.debug("没有任何订阅，跳过动态检查")
+            return@withTimeout
+        }
+
         val dynamicList = client.getNewDynamic()
         if (dynamicList != null) {
-            val followingUsers = dynamic.filter { it.value.contacts.isNotEmpty() }.map { it.key }
-
             val dynamics = dynamicList.items
                 .filter {
                     !banType.contains(it.type)
@@ -65,12 +86,18 @@ object DynamicCheckTasker : BiliCheckTasker("Dynamic") {
                 }
             }
 
-            dynamics.map { it.did }.forEach {
-                historyDynamic.add(lastIndex, it)
-                lastIndex ++
-                if (lastIndex >= capacity) lastIndex = 0
+            // ✅ 使用 ArrayDeque，自动限制大小
+            dynamics.map { it.did }.forEach { did ->
+                if (historyDynamic.size >= HISTORY_CAPACITY) {
+                    historyDynamic.removeFirst()
+                }
+                historyDynamic.addLast(did)
             }
-            if (dynamics.isNotEmpty()) lastDynamic = dynamics.last().time
+            if (dynamics.isNotEmpty()) {
+                lastDynamic = dynamics.last().time
+                // ✅ 保存历史记录
+                saveHistory()
+            }
             dynamicChannel.sendAll(dynamics.map { DynamicDetail(it) })
         } else {
             logger.warn("获取动态列表失败")
@@ -118,4 +145,15 @@ object DynamicCheckTasker : BiliCheckTasker("Dynamic") {
         }
     }
 
+    /**
+     * ✅ 保存历史记录到文件
+     */
+    private fun saveHistory() {
+        try {
+            historyFile.parentFile?.mkdirs()
+            historyFile.writeText(historyDynamic.joinToString("\n"))
+        } catch (e: Exception) {
+            logger.error("保存动态历史记录失败", e)
+        }
+    }
 }

@@ -1,5 +1,6 @@
 package top.bilibili.tasker
 
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -23,8 +24,15 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
     private val triggerMode get() = BiliConfigManager.config.linkResolveConfig.triggerMode
     private val returnLink get() = BiliConfigManager.config.linkResolveConfig.returnLink
 
-    // 缓存最近解析的链接，避免无限循环（记录 群ID+链接 -> 时间戳）
-    private val recentlyParsedLinks = mutableMapOf<String, Long>()
+    // ✅ 缓存最近解析的链接，使用 LRU LinkedHashMap 限制容量
+    private const val MAX_CACHE_SIZE = 10000
+    private val recentlyParsedLinks = object : LinkedHashMap<String, Long>(
+        16, 0.75f, true // accessOrder = true (LRU)
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>): Boolean {
+            return size > MAX_CACHE_SIZE
+        }
+    }
     private val cacheDuration = 60_000L // 60 秒缓存时间
     private val cacheMutex = Mutex() // 缓存锁
 
@@ -38,7 +46,7 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
 
         // 启动缓存清理协程
         BiliBiliBot.launch {
-            while (true) {
+            while (isActive) {
                 delay(5000) // 每 5 秒清理一次
                 cleanExpiredCache()
             }
@@ -60,8 +68,8 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
     }
 
     override suspend fun main() {
-        // 主循环在 init() 中启动的协程中运行
-        delay(Long.MAX_VALUE)
+        // ✅ 明确表示等待取消
+        awaitCancellation()
     }
 
     /**
@@ -85,6 +93,13 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
      */
     private suspend fun handleGroupMessage(event: MessageEvent) {
         val groupId = event.groupId ?: return
+        val userId = event.userId
+
+        // ✅ 黑名单检查：忽略黑名单中的用户
+        if (top.bilibili.BiliData.linkParseBlacklist.contains(userId)) {
+            logger.debug("忽略黑名单用户 $userId 的链接解析请求")
+            return
+        }
 
         // 过滤掉 Bot 自己发送的消息，避免无限循环
         // event.selfId 是 Bot 的 QQ 号，event.userId 是消息发送者的 QQ 号

@@ -66,13 +66,33 @@ class NapCatClient(
     /** 停止客户端 */
     fun stop() {
         logger.info("正在停止 NapCat WebSocket 客户端...")
+
+        // 标记为未连接状态
         isConnected.set(false)
+
+        // 关闭发送通道（触发发送协程退出）
         sendChannel.close()
-        scope.cancel()
+
+        // ✅ 阻塞等待协程结束（带超时）
         runBlocking {
-            session?.close(CloseReason(CloseReason.Codes.NORMAL, "Client stopped"))
+            withTimeoutOrNull(5000) {
+                scope.coroutineContext[Job]?.cancelAndJoin()
+                logger.info("NapCat 协程已正常结束")
+            } ?: logger.warn("等待 NapCat 协程结束超时，强制取消")
         }
+
+        // 关闭 WebSocket 会话
+        runBlocking {
+            try {
+                session?.close(CloseReason(CloseReason.Codes.NORMAL, "Client stopped"))
+            } catch (e: Exception) {
+                logger.warn("关闭 WebSocket 会话失败", e)
+            }
+        }
+
+        // 关闭 HTTP 客户端
         client.close()
+
         logger.info("NapCat WebSocket 客户端已停止")
     }
 

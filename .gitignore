@@ -145,3 +145,7 @@ src/test/resources/output/**
 
 .claude/
 .trae/
+
+# Exclude docs markdown files, keep only images
+docs/*.md
+docs/plans/

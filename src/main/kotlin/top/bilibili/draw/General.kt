@@ -74,10 +74,11 @@ fun loadSVG(path: String): SVGDOM? {
     return try {
         // 使用 classLoader 加载资源，确保从 classpath 根目录开始查找
         val resourcePath = if (path.startsWith("/")) path.substring(1) else path
+        // ✅ 使用 use 确保资源正确关闭
         val resourceStream = top.bilibili.core.BiliBiliBot::class.java.classLoader.getResourceAsStream(resourcePath)
         if (resourceStream != null) {
-            SVGDOM(Data.makeFromBytes(resourceStream.readBytes())).also {
-                resourceStream.close()
+            resourceStream.use {
+                SVGDOM(Data.makeFromBytes(it.readBytes()))
             }
         } else {
             logger.warn("SVG 资源未找到: $path")

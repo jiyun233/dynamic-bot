@@ -34,21 +34,53 @@ abstract class BiliTasker(
 
     override fun start(): Boolean {
         job = launch(coroutineContext) {
-            init()
+            var consecutiveErrors = 0
+            val maxErrors = 10
+
+            // ✅ 初始化失败直接退出
+            try {
+                init()
+            } catch (e: Exception) {
+                logger.error("任务 ${this::class.simpleName} 初始化失败", e)
+                return@launch
+            }
+
             if (interval == -1) {
-                before()
-                main()
-                after()
+                // 一次性任务
+                runCatching {
+                    before()
+                    main()
+                    after()
+                }.onFailure { e ->
+                    logger.error("一次性任务 ${this::class.simpleName} 执行失败", e)
+                }
             } else {
+                // 周期性任务
                 while (isActive) {
-                    try {
+                    val result = runCatching {
                         before()
                         main()
                         after()
-                    } catch (t: Throwable) {
-                        logger.error(this::class.simpleName + t)
-                        delay(120000L)
                     }
+
+                    if (result.isFailure) {
+                        consecutiveErrors++
+                        logger.error("任务 ${this::class.simpleName} 执行失败 ($consecutiveErrors/$maxErrors)", result.exceptionOrNull())
+
+                        // ✅ 连续失败过多则停止任务
+                        if (consecutiveErrors >= maxErrors) {
+                            logger.error("任务 ${this::class.simpleName} 连续失败 $maxErrors 次，停止任务")
+                            break
+                        }
+
+                        // ✅ 指数退避策略
+                        val backoffDelay = minOf(120000L, consecutiveErrors * 10000L)
+                        delay(backoffDelay)
+                    } else {
+                        // ✅ 成功后重置计数器
+                        consecutiveErrors = 0
+                    }
+
                     delay(interval * unitTime)
                 }
             }

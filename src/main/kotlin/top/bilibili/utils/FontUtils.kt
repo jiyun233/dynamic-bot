@@ -39,9 +39,10 @@ object FontUtils {
         return try {
             // 使用 classLoader 加载资源，确保从 classpath 根目录开始查找
             val path = if (resourcePath.startsWith("/")) resourcePath.substring(1) else resourcePath
+            // ✅ 使用 use 确保资源正确关闭
             val inputStream = FontUtils::class.java.classLoader.getResourceAsStream(path)
             if (inputStream != null) {
-                val bytes = inputStream.readBytes()
+                val bytes = inputStream.use { it.readBytes() }
                 val data = Data.makeFromBytes(bytes)
                 val face = Typeface.makeFromData(data, index)
                 if (defaultFont == null) defaultFont = face

@@ -19,6 +19,10 @@ import top.bilibili.utils.actionNotify
 object DynamicService {
     private val mutex = Mutex()
 
+    // ✅ 容量保护机制
+    private const val MAX_SUBSCRIPTIONS = 50000
+    private const val MAX_CONTACTS_PER_UID = 1000
+
     private suspend fun followUser(uid: Long): String? {
         if (uid == BiliBiliBot.uid) return null
 
@@ -68,6 +72,11 @@ object DynamicService {
     suspend fun addSubscribe(uid: Long, subject: String, isSelf: Boolean = true) = mutex.withLock {
         if (isFollow(uid, subject)) return@withLock "之前订阅过这个人哦"
 
+        // ✅ 检查全局订阅数量上限
+        if (dynamic.size >= MAX_SUBSCRIPTIONS) {
+            return@withLock "订阅数量已达上限 $MAX_SUBSCRIPTIONS，无法添加新订阅"
+        }
+
         if (!dynamic.containsKey(uid)) {
             val un = if (BiliBiliBot.uid == uid) client.userInfo(uid)?.name!!
             else {
@@ -80,7 +89,14 @@ object DynamicService {
             dynamic[uid] = SubData(un)
         }
 
-        dynamic[uid]?.contacts?.add(subject)
+        val subData = dynamic[uid]!!
+
+        // ✅ 检查单个 UID 的联系人数量上限
+        if (subData.contacts.size >= MAX_CONTACTS_PER_UID) {
+            return@withLock "UID $uid 的订阅联系人数量已达上限 $MAX_CONTACTS_PER_UID"
+        }
+
+        subData.contacts.add(subject)
 
         // TODO: [Mirai依赖] 需要重写联系人查找逻辑
         // val contact = findContact(subject)
@@ -94,6 +110,23 @@ object DynamicService {
         if (user.contacts.remove(subject)) {
             if (user.contacts.isEmpty()) {
                 dynamic.remove(uid)
+
+                // ✅ 同步清理关联数据
+                filter.forEach { (_, filterMap) ->
+                    filterMap.remove(uid)
+                }
+                top.bilibili.BiliData.dynamicPushTemplate.values.forEach { contacts ->
+                    contacts.remove(subject)
+                }
+                top.bilibili.BiliData.livePushTemplate.values.forEach { contacts ->
+                    contacts.remove(subject)
+                }
+                top.bilibili.BiliData.liveCloseTemplate.values.forEach { contacts ->
+                    contacts.remove(subject)
+                }
+
+                logger.info("已完全移除 UID $uid 的订阅数据（无订阅者）")
+
                 // 如果没有其他订阅者，且启用了自动关注，则取消关注
                 unfollowUser(uid)
             }

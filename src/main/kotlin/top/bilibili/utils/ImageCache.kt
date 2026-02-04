@@ -9,15 +9,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import top.bilibili.core.BiliBiliBot
+import java.io.Closeable
 import java.io.File
 import java.security.MessageDigest
 import java.time.Instant
+import java.util.concurrent.TimeUnit
+import okhttp3.ConnectionPool
 
 /**
  * 图片缓存管理器
  * 负责下载网络图片并保存到本地，返回 file:// 协议路径供 NapCat 使用
  */
-object ImageCache {
+object ImageCache : Closeable {
     private val logger = LoggerFactory.getLogger(ImageCache::class.java)
 
     /** 缓存目录 */
@@ -30,7 +33,27 @@ object ImageCache {
         engine {
             config {
                 followRedirects(true)
+
+                // 配置连接池参数
+                connectionPool(ConnectionPool(
+                    maxIdleConnections = 5,
+                    keepAliveDuration = 5,
+                    timeUnit = TimeUnit.MINUTES
+                ))
             }
+        }
+    }
+
+    /**
+     * 关闭 HTTP 客户端，释放资源
+     */
+    override fun close() {
+        logger.info("正在关闭 ImageCache HTTP 客户端...")
+        try {
+            httpClient.close()
+            logger.info("ImageCache HTTP 客户端已关闭")
+        } catch (e: Exception) {
+            logger.error("关闭 ImageCache HTTP 客户端失败: ${e.message}", e)
         }
     }
 
@@ -239,6 +262,69 @@ object ImageCache {
             }
         } catch (e: Exception) {
             logger.error("清理图片缓存失败: ${e.message}", e)
+        }
+    }
+
+    /**
+     * 基于大小的 LRU 清理策略
+     * @param maxSizeMB 最大缓存大小（MB），默认 1024 MB (1 GB)
+     */
+    fun cleanBySize(maxSizeMB: Long = 1024L) {
+        try {
+            val maxBytes = maxSizeMB * 1024 * 1024
+            val files = cacheDir.listFiles()
+                ?.sortedBy { it.lastModified() }  // 按修改时间排序（最旧的在前）
+                ?: return
+
+            var totalSize = files.sumOf { it.length() }
+
+            if (totalSize <= maxBytes) {
+                logger.debug("缓存大小 ${totalSize / 1024 / 1024} MB，未超过限制 $maxSizeMB MB")
+                return
+            }
+
+            var deletedCount = 0
+            var freedBytes = 0L
+
+            // 从最旧的文件开始删除，直到低于限制
+            for (file in files) {
+                if (totalSize <= maxBytes) break
+
+                val fileSize = file.length()
+                if (file.delete()) {
+                    totalSize -= fileSize
+                    freedBytes += fileSize
+                    deletedCount++
+                    logger.debug("LRU 删除: ${file.name} (${fileSize / 1024} KB)")
+                }
+            }
+
+            if (deletedCount > 0) {
+                logger.info("LRU 清理完成: 删除 $deletedCount 个最旧文件，释放 ${freedBytes / 1024 / 1024} MB，当前缓存 ${totalSize / 1024 / 1024} MB")
+            }
+        } catch (e: Exception) {
+            logger.error("基于大小清理缓存失败: ${e.message}", e)
+        }
+    }
+
+    /**
+     * 组合清理策略：先按时间清理过期文件，再按大小清理
+     */
+    fun cleanCache() {
+        try {
+            logger.info("开始执行图片缓存清理...")
+
+            // 先清理 7 天前的文件
+            cleanExpiredCache()
+
+            // 再确保总大小不超过 1 GB
+            cleanBySize()
+
+            // 输出最终统计
+            val finalStats = getCacheStats()
+            logger.info("缓存清理完成，最终状态: ${finalStats.fileCount} 个文件，${finalStats.totalSizeMB} MB")
+        } catch (e: Exception) {
+            logger.error("组合清理缓存失败: ${e.message}", e)
         }
     }
 

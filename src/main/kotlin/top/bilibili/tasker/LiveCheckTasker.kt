@@ -28,6 +28,13 @@ object LiveCheckTasker : BiliCheckTasker("Live") {
 
         // 获取订阅列表中的 UP 主 UID
         val followingUsers = dynamic.filter { it.value.contacts.isNotEmpty() }.map { it.key }
+
+        // ✅ 优化：无订阅时跳过 API 调用
+        if (followingUsers.isEmpty()) {
+            logger.debug("没有任何订阅，跳过直播检查")
+            return@withTimeout
+        }
+
         logger.debug("订阅的UP主 UID: ${followingUsers.joinToString()}")
         logger.debug("当前 lastLive = $lastLive")
 

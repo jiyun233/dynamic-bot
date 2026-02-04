@@ -31,6 +31,9 @@ object BiliData {
 
     // key: season id - 番剧
     var bangumi: MutableMap<Long, Bangumi> = mutableMapOf()
+
+    // 链接解析黑名单 - 忽略指定QQ号的链接解析请求
+    var linkParseBlacklist: MutableSet<Long> = mutableSetOf()
 }
 
 @Serializable

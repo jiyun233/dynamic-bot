@@ -37,6 +37,16 @@ open class BiliClient : Closeable {
     val clients = MutableList(3) { client() }
 
     protected fun client() = HttpClient(OkHttp) {
+        engine {
+            config {
+                // ✅ 显式配置连接池
+                connectionPool(okhttp3.ConnectionPool(
+                    maxIdleConnections = 5,      // 最多 5 个空闲连接
+                    keepAliveDuration = 5,       // 保活 5 分钟
+                    timeUnit = java.util.concurrent.TimeUnit.MINUTES
+                ))
+            }
+        }
         defaultRequest {
             header(HttpHeaders.Origin, "https://t.bilibili.com")
             header(HttpHeaders.Referrer, "https://t.bilibili.com")

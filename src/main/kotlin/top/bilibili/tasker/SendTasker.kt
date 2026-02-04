@@ -1,5 +1,6 @@
 package top.bilibili.tasker
 
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -44,8 +45,8 @@ object SendTasker : BiliTasker("SendTasker") {
     }
 
     override suspend fun main() {
-        // 主循环在 init() 中启动的协程中运行
-        delay(Long.MAX_VALUE)
+        // ✅ 明确表示等待取消
+        awaitCancellation()
     }
 
     /**

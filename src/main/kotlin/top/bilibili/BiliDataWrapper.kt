@@ -15,7 +15,8 @@ data class BiliDataWrapper(
     var livePushTemplate: MutableMap<String, MutableSet<String>> = mutableMapOf(),
     var liveCloseTemplate: MutableMap<String, MutableSet<String>> = mutableMapOf(),
     var group: MutableMap<String, Group> = mutableMapOf(),
-    var bangumi: MutableMap<Long, Bangumi> = mutableMapOf()
+    var bangumi: MutableMap<Long, Bangumi> = mutableMapOf(),
+    var linkParseBlacklist: MutableSet<Long> = mutableSetOf()
 ) {
     companion object {
         /** 从 BiliData object 创建包装类 */
@@ -28,7 +29,8 @@ data class BiliDataWrapper(
                 livePushTemplate = biliData.livePushTemplate,
                 liveCloseTemplate = biliData.liveCloseTemplate,
                 group = biliData.group,
-                bangumi = biliData.bangumi
+                bangumi = biliData.bangumi,
+                linkParseBlacklist = biliData.linkParseBlacklist
             )
         }
 
@@ -42,6 +44,7 @@ data class BiliDataWrapper(
             biliData.liveCloseTemplate = wrapper.liveCloseTemplate
             biliData.group = wrapper.group
             biliData.bangumi = wrapper.bangumi
+            biliData.linkParseBlacklist = wrapper.linkParseBlacklist
         }
     }
 }

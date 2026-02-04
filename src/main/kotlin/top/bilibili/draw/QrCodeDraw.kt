@@ -43,13 +43,13 @@ fun loginQrCode(url: String): Image {
 
             // 尝试加载并绘制 Logo，如果失败则跳过
             try {
-                val logoStream = BiliBiliBot.getResourceAsStream("/icon/BILIBILI_LOGO.svg")
-                if (logoStream != null) {
-                    val svg = SVGDOM(Data.makeFromBytes(logoStream.readBytes()))
+                // ✅ 使用新的安全 API
+                val logoBytes = BiliBiliBot.getResourceBytes("/icon/BILIBILI_LOGO.svg")
+                if (logoBytes != null) {
+                    val svg = SVGDOM(Data.makeFromBytes(logoBytes))
                     drawImage(svg.makeImage(40f, 40f), 105f, 105f, Paint().apply {
                         colorFilter = ColorFilter.makeBlend(Color.WHITE, BlendMode.SRC_ATOP)
                     })
-                    logoStream.close()
                 } else {
                     // Logo 不存在，绘制文字 "B"
                     val textLine = TextLine.make("B", Font(Typeface.makeDefault(), 50f))

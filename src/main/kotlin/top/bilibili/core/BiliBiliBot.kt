@@ -14,10 +14,12 @@ import top.bilibili.data.BiliMessage
 import top.bilibili.api.userInfo
 import top.bilibili.api.getEpisodeInfo
 import top.bilibili.utils.ImageCache
+import top.bilibili.tasker.BiliTasker
 import kotlinx.coroutines.channels.Channel
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.io.path.Path
 
@@ -27,8 +29,13 @@ import kotlin.io.path.Path
  */
 object BiliBiliBot : CoroutineScope {
     val logger = LoggerFactory.getLogger(BiliBiliBot::class.java)
-    private val job = SupervisorJob()
-    override val coroutineContext: CoroutineContext = Dispatchers.Default + job
+    private var job: Job? = SupervisorJob()
+    override val coroutineContext: CoroutineContext
+        get() = Dispatchers.Default + (job ?: SupervisorJob().also { job = it })
+
+    // ✅ 运行状态标志
+    private val isRunning = AtomicBoolean(false)
+    private var startTime: Long = 0L
 
     /** 数据文件夹 */
     val dataFolder = File("data")
@@ -51,6 +58,9 @@ object BiliBiliBot : CoroutineScope {
     /** Bot 配置 */
     lateinit var config: top.bilibili.config.BotConfig
         private set
+
+    /** ✅ 事件收集协程的显式引用 */
+    private var eventCollectorJob: Job? = null
 
     /**
      * 检查 NapCat 客户端是否已初始化
@@ -98,15 +108,48 @@ object BiliBiliBot : CoroutineScope {
     val missChannel = Channel<BiliMessage>(10)
     val liveUsers = mutableMapOf<Long, Long>()
 
-    /** 获取资源文件流 */
+    /**
+     * 获取资源文件流
+     * @deprecated 使用 useResourceAsStream 或 getResourceBytes 替代，以确保资源正确关闭
+     */
+    @Deprecated("使用 useResourceAsStream 或 getResourceBytes 替代", ReplaceWith("useResourceAsStream(path) { it.readBytes() }"))
     fun getResourceAsStream(path: String): InputStream? {
         // 使用 classLoader 加载资源，确保从 classpath 根目录开始查找
         val resourcePath = if (path.startsWith("/")) path.substring(1) else path
         return this::class.java.classLoader.getResourceAsStream(resourcePath)
     }
 
+    /**
+     * ✅ 安全地使用资源文件流
+     * @param path 资源路径
+     * @param block 使用流的操作
+     * @return 操作结果，如果资源不存在则返回 null
+     */
+    inline fun <T> useResourceAsStream(path: String, block: (InputStream) -> T): T? {
+        val resourcePath = if (path.startsWith("/")) path.substring(1) else path
+        return this::class.java.classLoader.getResourceAsStream(resourcePath)?.use(block)
+    }
+
+    /**
+     * ✅ 读取资源文件为字节数组
+     */
+    fun getResourceBytes(path: String): ByteArray? {
+        val resourcePath = if (path.startsWith("/")) path.substring(1) else path
+        return this::class.java.classLoader.getResourceAsStream(resourcePath)?.use {
+            it.readBytes()
+        }
+    }
+
     /** 启动 Bot */
     fun start(enableDebug: Boolean? = null) {
+        // ✅ 重复启动保护
+        if (!isRunning.compareAndSet(false, true)) {
+            logger.warn("Bot 已在运行中，忽略重复启动请求")
+            return
+        }
+
+        startTime = System.currentTimeMillis()
+
         // 保存命令行参数
         if (enableDebug != null) {
             commandLineDebugMode = enableDebug
@@ -130,6 +173,7 @@ object BiliBiliBot : CoroutineScope {
             }
         } catch (e: Exception) {
             logger.error("加载配置失败: ${e.message}")
+            isRunning.set(false)
             return
         }
 
@@ -162,6 +206,7 @@ object BiliBiliBot : CoroutineScope {
 
             if (!config.napcat.validate()) {
                 logger.error("NapCat 配置无效，请检查 config/bot.yml")
+                isRunning.set(false)
                 return
             }
 
@@ -169,61 +214,154 @@ object BiliBiliBot : CoroutineScope {
             logger.info("正在初始化 NapCat 客户端...")
             napCat = NapCatClient(config.napcat)
 
-            // 3. 订阅消息事件
-            launch {
+            // 3. 订阅消息事件（✅ 显式管理协程）
+            eventCollectorJob = launch {
                 napCat.eventFlow.collect { event ->
-                    handleMessageEvent(event)
+                    try {
+                        // ✅ 单个事件处理最多 5 秒
+                        withTimeout(5000) {
+                            handleMessageEvent(event)
+                        }
+                    } catch (e: TimeoutCancellationException) {
+                        logger.warn("处理事件超时: ${event.messageType}")
+                    } catch (e: Exception) {
+                        logger.error("处理事件失败", e)
+                    }
                 }
             }
 
             // 4. 启动 NapCat 客户端
             napCat.start()
 
-            // 5. 初始化 B站数据
+            // 5. 初始化 B站数据（✅ 添加超时保护）
             launch {
-                delay(3000) // 等待 WebSocket 连接
-                initBiliData()
+                try {
+                    withTimeout(60000) {  // 60 秒超时
+                        delay(3000) // 等待 WebSocket 连接
+                        initBiliData()
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    logger.error("初始化数据超时")
+                    stop()  // 超时则停止 Bot
+                }
             }
 
-            // 6. 启动任务
+            // 6. 启动任务（✅ 添加超时保护）
             launch {
-                delay(5000) // 等待初始化完成
-                startTasks()
+                try {
+                    withTimeout(30000) {  // 30 秒超时
+                        delay(5000) // 等待初始化完成
+                        startTasks()
 
-                // 首次运行检查
-                delay(1000)
-                checkFirstRun()
+                        // 首次运行检查
+                        delay(1000)
+                        checkFirstRun()
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    logger.error("启动任务超时")
+                }
             }
 
             logger.info("Bot 启动成功！")
 
         } catch (e: Exception) {
             logger.error("Bot 启动失败: ${e.message}", e)
+            isRunning.set(false)
             stop()
         }
     }
 
     /** 停止 Bot */
     fun stop() {
+        if (!isRunning.compareAndSet(true, false)) {
+            logger.warn("Bot 未在运行，忽略停止请求")
+            return
+        }
+
         logger.info("正在停止 Bot...")
 
         try {
-            // 停止 NapCat 客户端
+            // 1. 优先关闭所有 Channel，触发消费者退出
+            try {
+                dynamicChannel.close()
+                liveChannel.close()
+                messageChannel.close()
+                missChannel.close()
+                logger.debug("所有 Channel 已关闭")
+            } catch (e: Exception) {
+                logger.warn("关闭 Channel 失败: ${e.message}", e)
+            }
+
+            // 2. ✅ 优先取消事件收集器
+            eventCollectorJob?.cancel()
+            eventCollectorJob = null
+
+            // 3. 停止 NapCat 客户端
             if (::napCat.isInitialized) {
                 napCat.stop()
             }
 
-            // 保存配置和数据
+            // 4. 停止所有任务
+            BiliTasker.cancelAll()
+
+            // 5. 关闭 ImageCache
+            try {
+                ImageCache.close()
+            } catch (e: Exception) {
+                logger.error("关闭 ImageCache 失败: ${e.message}", e)
+            }
+
+            // 6. 关闭 BiliClient
+            try {
+                top.bilibili.utils.biliClient.close()
+                logger.info("BiliClient 已关闭")
+            } catch (e: Exception) {
+                logger.error("关闭 BiliClient 失败: ${e.message}", e)
+            }
+
+            // 7. 保存配置和数据
             if (::config.isInitialized) {
                 BiliConfigManager.saveAll()
             }
 
-            // 取消所有协程
-            job.cancel()
+            // 8. ✅ 等待协程完成（带超时）
+            runBlocking {
+                try {
+                    withTimeout(10000) { // 10 秒超时
+                        job?.cancelAndJoin()
+                        logger.info("所有协程已正常结束")
+                    }
+                } catch (e: TimeoutCancellationException) {
+                    logger.warn("等待协程结束超时，强制取消")
+                    job?.cancel()
+                }
+            }
+
+            job = null
 
             logger.info("Bot 已停止")
         } catch (e: Exception) {
             logger.error("停止 Bot 时发生错误: ${e.message}", e)
+        }
+    }
+
+    /**
+     * 检查 Bot 是否正常运行
+     */
+    fun isHealthy(): Boolean {
+        return isRunning.get() &&
+               job?.isActive == true &&
+               ::napCat.isInitialized
+    }
+
+    /**
+     * 获取运行时长（秒）
+     */
+    fun getUptimeSeconds(): Long {
+        return if (isRunning.get()) {
+            (System.currentTimeMillis() - startTime) / 1000
+        } else {
+            0L
         }
     }
 
@@ -376,6 +514,37 @@ object BiliBiliBot : CoroutineScope {
         if (isSuperAdmin(userId) && message.trim() == "/list") {
             handleListSubscriptions(groupId, isGroup = true)
             return
+        }
+
+        // ✅ 处理快捷黑名单命令（仅超级管理员可用）
+        if (isSuperAdmin(userId)) {
+            when {
+                // /black list - 查看黑名单列表
+                message.trim() == "/black list" -> {
+                    handleBlacklistList(groupId, isGroup = true)
+                    return
+                }
+                // /black [QQ号] - 添加黑名单
+                message.trim().startsWith("/black ") -> {
+                    val targetId = message.trim().removePrefix("/black ").trim().toLongOrNull()
+                    if (targetId != null) {
+                        handleBlacklistAdd(groupId, targetId, isGroup = true)
+                    } else {
+                        sendGroupMessage(groupId, listOf(MessageSegment.text("QQ号格式错误")))
+                    }
+                    return
+                }
+                // /unblock [QQ号] - 取消黑名单
+                message.trim().startsWith("/unblock ") -> {
+                    val targetId = message.trim().removePrefix("/unblock ").trim().toLongOrNull()
+                    if (targetId != null) {
+                        handleBlacklistRemove(groupId, targetId, isGroup = true)
+                    } else {
+                        sendGroupMessage(groupId, listOf(MessageSegment.text("QQ号格式错误")))
+                    }
+                    return
+                }
+            }
         }
 
         // 处理手动触发检查命令（仅管理员可用，用于测试）
@@ -574,6 +743,7 @@ object BiliBiliBot : CoroutineScope {
                 "group" -> handleBiliGroupCommand(contactId, userId, args, isGroup)
                 "filter" -> handleBiliFilterCommand(contactId, userId, args, isGroup)
                 "admin" -> handleBiliAdminCommand(contactId, userId, args, isGroup)
+                "blacklist", "bl" -> handleBiliBlacklistCommand(contactId, userId, args, isGroup)
                 "help" -> sendHelpMessage(contactId, userId, isGroup)
                 else -> {
                     val msg = "未知命令: ${args[0]}\n使用 /bili help 查看帮助"
@@ -633,6 +803,9 @@ object BiliBiliBot : CoroutineScope {
             /add <UID> - 快速订阅
             /del <UID> - 快速取消订阅
             /list - 查看订阅列表
+            /black [QQ号] - 添加黑名单
+            /unblock [QQ号] - 取消黑名单
+            /black list - 查看黑名单
             """.trimIndent()
         } else {
             """
@@ -674,16 +847,15 @@ object BiliBiliBot : CoroutineScope {
     private fun getHelpImageFileUrl(imageName: String): String? {
         val tempFile = tempPath.resolve(imageName).toFile()
         if (!tempFile.exists()) {
-            val inputStream = getResourceAsStream("image/$imageName")
-            if (inputStream == null) {
+            // ✅ 使用新的安全 API
+            val bytes = getResourceBytes("image/$imageName")
+            if (bytes == null) {
                 logger.warn("帮助图片资源不存在: image/$imageName")
                 return null
             }
             tempFile.parentFile?.mkdirs()
             try {
-                inputStream.use { stream ->
-                    tempFile.writeBytes(stream.readBytes())
-                }
+                tempFile.writeBytes(bytes)
             } catch (e: Exception) {
                 logger.warn("写入帮助图片失败: ${e.message}")
                 return null
@@ -1572,6 +1744,153 @@ object BiliBiliBot : CoroutineScope {
         else sendPrivateMessage(contactId, listOf(MessageSegment.text(result)))
     }
 
+    /** 处理 /bili blacklist 命令 */
+    private suspend fun handleBiliBlacklistCommand(contactId: Long, userId: Long, args: List<String>, isGroup: Boolean) {
+        // 仅超级管理员可用
+        if (!isSuperAdmin(userId)) {
+            val msg = "权限不足: 仅超级管理员可使用黑名单功能"
+            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            return
+        }
+
+        if (args.size < 2) {
+            val msg = """
+                用法:
+                /bili blacklist add <QQ号> - 添加到链接解析黑名单
+                /bili blacklist remove <QQ号> - 从黑名单移除
+                /bili blacklist list - 查看黑名单列表
+            """.trimIndent()
+            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            return
+        }
+
+        when (args[1].lowercase()) {
+            "add" -> {
+                if (args.size < 3) {
+                    val msg = "用法: /bili blacklist add <QQ号>"
+                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                    return
+                }
+
+                val targetId = args[2].toLongOrNull()
+                if (targetId == null) {
+                    val msg = "QQ号格式错误"
+                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                    return
+                }
+
+                if (top.bilibili.BiliData.linkParseBlacklist.contains(targetId)) {
+                    val msg = "用户 $targetId 已在黑名单中"
+                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                    return
+                }
+
+                top.bilibili.BiliData.linkParseBlacklist.add(targetId)
+                top.bilibili.BiliConfigManager.saveData()
+
+                val msg = "已将 $targetId 添加到链接解析黑名单\nBot 将忽略该用户的所有链接解析请求"
+                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            }
+            "remove", "rm", "del" -> {
+                if (args.size < 3) {
+                    val msg = "用法: /bili blacklist remove <QQ号>"
+                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                    return
+                }
+
+                val targetId = args[2].toLongOrNull()
+                if (targetId == null) {
+                    val msg = "QQ号格式错误"
+                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                    return
+                }
+
+                if (!top.bilibili.BiliData.linkParseBlacklist.contains(targetId)) {
+                    val msg = "用户 $targetId 不在黑名单中"
+                    if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                    else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+                    return
+                }
+
+                top.bilibili.BiliData.linkParseBlacklist.remove(targetId)
+                top.bilibili.BiliConfigManager.saveData()
+
+                val msg = "已将 $targetId 从链接解析黑名单移除"
+                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            }
+            "list", "ls" -> {
+                val blacklist = top.bilibili.BiliData.linkParseBlacklist
+                val msg = if (blacklist.isEmpty()) {
+                    "链接解析黑名单为空"
+                } else {
+                    "链接解析黑名单 (${blacklist.size} 个用户):\n${blacklist.joinToString("\n")}"
+                }
+                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            }
+            else -> {
+                val msg = "未知子命令: ${args[1]}\n使用 /bili blacklist 查看帮助"
+                if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+                else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            }
+        }
+    }
+
+    /** ✅ 处理添加黑名单 */
+    private suspend fun handleBlacklistAdd(contactId: Long, targetId: Long, isGroup: Boolean) {
+        if (top.bilibili.BiliData.linkParseBlacklist.contains(targetId)) {
+            val msg = "用户 $targetId 已在黑名单中"
+            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            return
+        }
+
+        top.bilibili.BiliData.linkParseBlacklist.add(targetId)
+        top.bilibili.BiliConfigManager.saveData()
+
+        val msg = "已将 $targetId 添加到链接解析黑名单\nBot 将忽略该用户的所有链接解析请求"
+        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+    }
+
+    /** ✅ 处理移除黑名单 */
+    private suspend fun handleBlacklistRemove(contactId: Long, targetId: Long, isGroup: Boolean) {
+        if (!top.bilibili.BiliData.linkParseBlacklist.contains(targetId)) {
+            val msg = "用户 $targetId 不在黑名单中"
+            if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+            else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+            return
+        }
+
+        top.bilibili.BiliData.linkParseBlacklist.remove(targetId)
+        top.bilibili.BiliConfigManager.saveData()
+
+        val msg = "已将 $targetId 从链接解析黑名单移除"
+        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+    }
+
+    /** ✅ 处理查看黑名单列表 */
+    private suspend fun handleBlacklistList(contactId: Long, isGroup: Boolean) {
+        val blacklist = top.bilibili.BiliData.linkParseBlacklist
+        val msg = if (blacklist.isEmpty()) {
+            "链接解析黑名单为空"
+        } else {
+            "链接解析黑名单 (${blacklist.size} 个用户):\n${blacklist.joinToString("\n")}"
+        }
+        if (isGroup) sendGroupMessage(contactId, listOf(MessageSegment.text(msg)))
+        else sendPrivateMessage(contactId, listOf(MessageSegment.text(msg)))
+    }
+
     /** 初始化 B站数据 */
     private suspend fun initBiliData() {
         try {
@@ -1645,13 +1964,16 @@ object BiliBiliBot : CoroutineScope {
             }
 
             val welcomeMsg = """
-                欢迎使用 
-                /bili help - 显示完整帮助 
-                /login或 登录 - 扫码登录 
-                /check - 手动触发检查 
-                /add <UID> - 快速订阅 
-                /del <UID> - 快速取消订阅 
-                /list - 查看订阅列表 
+                欢迎使用 BiliBili 动态推送 Bot
+                /bili help - 显示完整帮助
+                /login或 登录 - 扫码登录
+                /check - 手动触发检查
+                /add <UID> - 快速订阅
+                /del <UID> - 快速取消订阅
+                /list - 查看订阅列表
+                /black [QQ号] - 添加黑名单
+                /unblock [QQ号] - 取消黑名单
+                /black list - 查看黑名单
             """.trimIndent()
 
             try {
