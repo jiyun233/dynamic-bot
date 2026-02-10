@@ -225,12 +225,7 @@ suspend fun ModuleDispute.drawGeneral(): Image {
             val svg = loadSVG("icon/DISPUTE.svg")
             if (svg != null) {
                 val iconSize = quality.contentFontSize
-                val iconImg = svg.makeImage(iconSize, iconSize)
-                try {
-                    canvas.drawImage(iconImg, x, y - quality.contentFontSize * 0.9f)
-                } finally {
-                    iconImg.close()
-                }
+                canvas.drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
                 x += iconSize + quality.lineSpace
             } else {
                 logger.warn("未找到类型为 DISPUTE 的图标")
@@ -263,12 +258,7 @@ suspend fun ModuleDynamic.Topic.drawGeneral(): Image {
             val svg = loadSVG("icon/TOPIC.svg")
             if (svg != null) {
                 val iconSize = quality.contentFontSize
-                val iconImg = svg.makeImage(iconSize, iconSize)
-                try {
-                    canvas.drawImage(iconImg, x, y - quality.contentFontSize * 0.9f)
-                } finally {
-                    iconImg.close()
-                }
+                canvas.drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
                 x += iconSize + quality.lineSpace
             } else {
                 logger.warn("未找到类型为 TOPIC 的图标")
@@ -363,12 +353,7 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(): Image {
                         val svg = loadSVG("icon/${it.type}.svg")
                         if (svg != null) {
                             val iconSize = quality.contentFontSize
-                            val iconImg = svg.makeImage(iconSize, iconSize)
-                            try {
-                                canvas.drawImage(iconImg, x, y - quality.contentFontSize * 0.9f)
-                            } finally {
-                                iconImg.close()
-                            }
+                            canvas.drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
                             x += iconSize
                         } else {
                             logger.warn("未找到类型为 ${it.type} 的图标")
