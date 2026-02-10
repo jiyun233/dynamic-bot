@@ -10,6 +10,41 @@ import java.util.*
 
 
 /**
+ * 安全地使用 Surface 创建图片，确保 Surface 被正确关闭释放原生内存
+ * @param width 图片宽度
+ * @param height 图片高度
+ * @param block 绑定操作
+ * @return 生成的 Image
+ */
+inline fun createImage(width: Int, height: Int, block: (Canvas) -> Unit): Image {
+    val surface = Surface.makeRasterN32Premul(width, height)
+    return try {
+        block(surface.canvas)
+        surface.makeImageSnapshot()
+    } finally {
+        surface.close()
+    }
+}
+
+/**
+ * 安全地使用 Surface 创建图片快照（指定区域），确保 Surface 被正确关闭释放原生内存
+ * @param width 图片宽度
+ * @param height 图片高度
+ * @param area 截取区域
+ * @param block 绑定操作
+ * @return 生成的 Image
+ */
+inline fun createImageWithArea(width: Int, height: Int, area: IRect, block: (Canvas) -> Unit): Image {
+    val surface = Surface.makeRasterN32Premul(width, height)
+    return try {
+        block(surface.canvas)
+        surface.makeImageSnapshot(area) ?: surface.makeImageSnapshot()
+    } finally {
+        surface.close()
+    }
+}
+
+/**
  * Emoji正则(可匹配组合emoji)
  */
 const val emojiCharacter =
@@ -25,9 +60,9 @@ val imageMiss: Image by lazy {
     } catch (e: Exception) {
         logger.error("无法加载 IMAGE_MISS.png: ${e.message}")
         // 创建一个简单的粉色占位图
-        Surface.makeRasterN32Premul(400, 300).apply {
+        createImage(400, 300) { canvas ->
             canvas.clear(Color.makeRGB(255, 192, 203))
-        }.makeImageSnapshot()
+        }
     }
 }
 
@@ -95,7 +130,7 @@ fun loadSVG(path: String): SVGDOM? {
  */
 fun SVGDOM.makeImage(width: Float, height: Float): Image {
     setContainerSize(width, height)
-    return Surface.makeRasterN32Premul(width.toInt(), height.toInt()).apply { render(canvas) }.makeImageSnapshot()
+    return createImage(width.toInt(), height.toInt()) { canvas -> render(canvas) }
 }
 
 fun Surface.saveImage(path: String) = File(path).writeBytes(makeImageSnapshot().encodeToData()!!.bytes)

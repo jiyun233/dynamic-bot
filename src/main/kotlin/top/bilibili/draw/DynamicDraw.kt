@@ -271,63 +271,58 @@ fun List<Image>.assembleCard(id: String, footer: String? = null, plusHeight: Int
     } else null
 
     val margin = if (isForward) quality.cardPadding * 2 else quality.cardMargin * 2
+    val imgList = this
 
-    return Surface.makeRasterN32Premul(
+    return createImage(
         (cardRect.width + margin).toInt(),
         height + quality.badgeHeight + margin + (footerParagraph?.height?.toInt() ?: 0)
-    ).apply {
-        canvas.apply {
+    ) { canvas ->
+        val rrect = RRect.makeComplexXYWH(
+            margin / 2f,
+            quality.badgeHeight + margin / 2f,
+            cardRect.width,
+            height.toFloat(),
+            cardBadgeArc
+        )
 
-            val rrect = RRect.makeComplexXYWH(
-                margin / 2f,
-                quality.badgeHeight + margin / 2f,
-                cardRect.width,
-                height.toFloat(),
-                cardBadgeArc
-            )
-
-            if (isForward) {
-                drawRectShadowAntiAlias(rrect.inflate(1f), theme.smallCardShadow)
-            } else {
-                drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
-            }
-
-            if (imageConfig.badgeEnable.left) {
-                val svg = loadSVG("icon/${if (isForward) "FORWARD" else "BILIBILI_LOGO"}.svg")
-                val badgeImage = svg?.makeImage(quality.contentFontSize, quality.contentFontSize)
-                drawBadge(
-                    tag ?: if (isForward) "转发动态" else "动态",
-                    font,
-                    theme.mainLeftBadge.fontColor,
-                    theme.mainLeftBadge.bgColor,
-                    rrect,
-                    TOP_LEFT,
-                    badgeImage
-                )
-            }
-            if (imageConfig.badgeEnable.right) {
-                drawBadge(id, font, theme.mainRightBadge.fontColor, theme.mainRightBadge.bgColor, rrect, TOP_RIGHT)
-            }
-
-            drawCard(rrect)
-
-            var top = quality.cardMargin + quality.badgeHeight.toFloat()
-            for (img in this@assembleCard) {
-
-                //drawScaleWidthImageOutline(img, cardRect.width, quality.cardMargin.toFloat(), top, isForward)
-                drawScaleWidthImage(img, cardRect.width, quality.cardMargin.toFloat(), top)
-
-                top += if (img.width > cardRect.width) {
-                    (cardRect.width * img.height / img.width + quality.contentSpace).toInt()
-                } else {
-                    img.height + quality.contentSpace
-                }
-            }
-
-            footerParagraph?.paint(this, cardRect.left, rrect.bottom + quality.cardMargin / 2)
-
+        if (isForward) {
+            canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.smallCardShadow)
+        } else {
+            canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
         }
-    }.makeImageSnapshot()
+
+        if (imageConfig.badgeEnable.left) {
+            val svg = loadSVG("icon/${if (isForward) "FORWARD" else "BILIBILI_LOGO"}.svg")
+            val badgeImage = svg?.makeImage(quality.contentFontSize, quality.contentFontSize)
+            canvas.drawBadge(
+                tag ?: if (isForward) "转发动态" else "动态",
+                font,
+                theme.mainLeftBadge.fontColor,
+                theme.mainLeftBadge.bgColor,
+                rrect,
+                TOP_LEFT,
+                badgeImage
+            )
+        }
+        if (imageConfig.badgeEnable.right) {
+            canvas.drawBadge(id, font, theme.mainRightBadge.fontColor, theme.mainRightBadge.bgColor, rrect, TOP_RIGHT)
+        }
+
+        canvas.drawCard(rrect)
+
+        var top = quality.cardMargin + quality.badgeHeight.toFloat()
+        for (img in imgList) {
+            canvas.drawScaleWidthImage(img, cardRect.width, quality.cardMargin.toFloat(), top)
+
+            top += if (img.width > cardRect.width) {
+                (cardRect.width * img.height / img.width + quality.contentSpace).toInt()
+            } else {
+                img.height + quality.contentSpace
+            }
+        }
+
+        footerParagraph?.paint(canvas, cardRect.left, rrect.bottom + quality.cardMargin / 2)
+    }
 }
 
 suspend fun DynamicItem.Modules.makeGeneral(
@@ -367,18 +362,16 @@ fun drawBlockedDefault(): Image {
         .addText("此动态为专属动态\n请自行查看详情内容")
         .build().layout(bgWidth)
 
-    return Surface.makeRasterN32Premul(
+    return createImage(
         cardContentRect.width.toInt(), (bgHeight + 3 * quality.cardPadding).toInt()
-    ).apply {
-        canvas.apply {
-            val x = quality.cardPadding.toFloat()
-            var y = quality.cardPadding.toFloat()
-            drawImageClip(bgImg, RRect.Companion.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
+    ) { canvas ->
+        val x = quality.cardPadding.toFloat()
+        var y = quality.cardPadding.toFloat()
+        canvas.drawImageClip(bgImg, RRect.Companion.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
 
-            y += (bgHeight - text.height) / 2
-            text.paint(this, x, y)
-        }
-    }.makeImageSnapshot()
+        y += (bgHeight - text.height) / 2
+        text.paint(canvas, x, y)
+    }
 }
 
 fun Rect.textVertical(text: TextLine) =
@@ -405,21 +398,16 @@ fun Canvas.drawCard(rrect: RRect, bgColor: Int = theme.cardBgColor) {
 
 fun makeCardBg(height: Int, colors: List<Int>, block: (Canvas) -> Unit): Image {
     val imageRect = Rect.makeXYWH(0f, 0f, quality.imageWidth.toFloat(), height.toFloat())
-    return Surface.makeRasterN32Premul(imageRect.width.toInt(), height).apply {
-        canvas.apply {
-            drawRect(imageRect, Paint().apply {
-                shader = Shader.makeLinearGradient(
-                    Point(imageRect.left, imageRect.top),
-                    Point(imageRect.right, imageRect.bottom),
-                    // H：色相   S：30   B：100
-                    //generateLinearGradient(listOf(0xFFffb2cc.toInt(), 0xFFffb2b2.toInt()))
-                    //generateLinearGradient(listOf(0xFFd3edfa.toInt()))
-                    generateLinearGradient(colors)
-                )
-            })
-            block(this)
-        }
-    }.makeImageSnapshot()
+    return createImage(imageRect.width.toInt(), height) { canvas ->
+        canvas.drawRect(imageRect, Paint().apply {
+            shader = Shader.makeLinearGradient(
+                Point(imageRect.left, imageRect.top),
+                Point(imageRect.right, imageRect.bottom),
+                generateLinearGradient(colors)
+            )
+        })
+        block(canvas)
+    }
 }
 
 suspend fun Canvas.drawAvatar(

@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "top.bilibili"
-version = "1.5"
+version = "1.5.2"
 
 repositories {
     mavenLocal()

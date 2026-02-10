@@ -1,4 +1,4 @@
-# BiliBili 动态推送 Bot v1.5
+# BiliBili 动态推送 Bot v1.5.2
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -502,6 +502,29 @@ Windows 用户可使用自动化脚本简化操作：
    - 文档和示例配置
 
 ## 更新日志
+
+### v1.5.2 (2026-02-11)
+
+**Skia 原生内存泄漏修复** 🔧
+- ✅ **修复 Surface 原生内存泄漏**
+  - 修复所有绘图模块中 Skia Surface 对象未正确关闭导致的原生内存泄漏
+  - 每次链接解析后内存增加 20-30MB 的问题已解决
+- ✅ **新增安全资源管理工具函数**
+  - 新增 `createImage()` 内联函数，确保 Surface 在绘图完成后自动关闭
+  - 新增 `createImageWithArea()` 内联函数，支持指定区域截图并自动释放资源
+- ✅ **修复的文件**
+  - `General.kt` - 修复 imageMiss 和 SVGDOM.makeImage()
+  - `DynamicDraw.kt` - 修复 assembleCard、drawBlockedDefault、makeCardBg
+  - `DynamicMajorDraw.kt` - 修复 12 处 Surface 使用（视频、文章、音乐等所有类型）
+  - `DynamicModuleDraw.kt` - 修复 6 处 Surface 使用
+  - `LiveDraw.kt` - 修复 drawLive、drawAvatar
+  - `QrCodeDraw.kt` - 修复 loginQrCode
+
+**技术说明** 📝
+- Skia 是 C++ 图形库，其对象（如 Surface）在 JVM 堆外分配原生内存
+- 即使 JVM 对象被 GC 回收，原生内存也不会自动释放
+- 必须显式调用 `close()` 方法释放原生资源
+- 使用 try-finally 模式确保资源在任何情况下都能正确释放
 
 ### v1.5.1 (2026-02-10)
 

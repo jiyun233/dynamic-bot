@@ -136,66 +136,64 @@ suspend fun drawAdditionalCard(
         quality.cardArc
     )
 
-    return Surface.makeRasterN32Premul(
+    val coverImg = if (cover != null) getOrDownloadImage(cover, CacheType.OTHER) else null
+
+    return createImage(
         cardRect.width.toInt(),
         (height + quality.subTitleFontSize + quality.cardPadding * 2f).toInt()
-    ).apply {
-        canvas.apply {
-            drawCard(additionalCardRect)
-            drawRectShadowAntiAlias(additionalCardRect.inflate(1f), theme.smallCardShadow)
+    ) { canvas ->
+        canvas.drawCard(additionalCardRect)
+        canvas.drawRectShadowAntiAlias(additionalCardRect.inflate(1f), theme.smallCardShadow)
 
-            val labelTextLine = TextLine.make(label, font.makeWithSize(quality.subTitleFontSize))
-            drawTextLine(labelTextLine, additionalCardRect.left + 8, quality.subTitleFontSize, Paint().apply {
-                color = theme.subTitleColor
-            })
+        val labelTextLine = TextLine.make(label, font.makeWithSize(quality.subTitleFontSize))
+        canvas.drawTextLine(labelTextLine, additionalCardRect.left + 8, quality.subTitleFontSize, Paint().apply {
+            color = theme.subTitleColor
+        })
 
-            var x = quality.cardPadding.toFloat()
+        var x = quality.cardPadding.toFloat()
 
-            if (cover != null) {
-                getOrDownloadImage(cover, CacheType.OTHER)?.let {img ->
-                    val imgRect = RRect.makeXYWH(
-                        quality.cardPadding.toFloat(),
-                        quality.subTitleFontSize + quality.cardPadding + 1f,
-                        quality.additionalCardHeight.toFloat() * img.width / img.height,
-                        quality.additionalCardHeight.toFloat(),
-                        quality.cardArc
-                    ).inflate(-1f) as RRect
-                    drawImageRRect(img, imgRect)
-                    x += imgRect.width
-                }
-            }
+        coverImg?.let { img ->
+            val imgRect = RRect.makeXYWH(
+                quality.cardPadding.toFloat(),
+                quality.subTitleFontSize + quality.cardPadding + 1f,
+                quality.additionalCardHeight.toFloat() * img.width / img.height,
+                quality.additionalCardHeight.toFloat(),
+                quality.cardArc
+            ).inflate(-1f) as RRect
+            canvas.drawImageRRect(img, imgRect)
+            x += imgRect.width
+        }
 
-            x += quality.cardPadding
+        x += quality.cardPadding
 
-            val titleParagraph =
-                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build()
-                    .layout(cardContentRect.width - x)
-            paragraphStyle.apply {
-                textStyle = descTextStyle.apply {
-                    fontSize = quality.subTitleFontSize * 0.8f
-                }
-            }
-            val desc1Paragraph =
-                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc1).build()
-                    .layout(cardContentRect.width - x)
-            val desc2Paragraph = desc2?.let {
-                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(it).build().layout(cardContentRect.width - x)
-            }
-
-            val top = (additionalCardRect.height - (titleParagraph.height * if (desc2 == null) 2 else 3)) / 2
-
-            var y = additionalCardRect.top + top
-            titleParagraph.paint(this, x, y)
-
-            y += titleParagraph.height
-            desc1Paragraph.paint(this, x, y)
-
-            if (desc2Paragraph != null) {
-                y += titleParagraph.height
-                desc2Paragraph.paint(this, x, y)
+        val titleParagraph =
+            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build()
+                .layout(cardContentRect.width - x)
+        paragraphStyle.apply {
+            textStyle = descTextStyle.apply {
+                fontSize = quality.subTitleFontSize * 0.8f
             }
         }
-    }.makeImageSnapshot()
+        val desc1Paragraph =
+            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(desc1).build()
+                .layout(cardContentRect.width - x)
+        val desc2Paragraph = desc2?.let {
+            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(it).build().layout(cardContentRect.width - x)
+        }
+
+        val top = (additionalCardRect.height - (titleParagraph.height * if (desc2 == null) 2 else 3)) / 2
+
+        var y = additionalCardRect.top + top
+        titleParagraph.paint(canvas, x, y)
+
+        y += titleParagraph.height
+        desc1Paragraph.paint(canvas, x, y)
+
+        if (desc2Paragraph != null) {
+            y += titleParagraph.height
+            desc2Paragraph.paint(canvas, x, y)
+        }
+    }
 }
 
 suspend fun ModuleDispute.drawGeneral(): Image {
@@ -209,28 +207,27 @@ suspend fun ModuleDispute.drawGeneral(): Image {
         textCardHeight
     )
 
-    return Surface.makeRasterN32Premul(cardRect.width.toInt(), textCardHeight.toInt()).apply {
-        canvas.apply {
-            drawRRect(textCardRect.toRRect(5f), Paint().apply { color = Color.makeRGB(255, 241, 211) })
+    val disputeTitle = title
+    return createImage(cardRect.width.toInt(), textCardHeight.toInt()) { canvas ->
+        canvas.drawRRect(textCardRect.toRRect(5f), Paint().apply { color = Color.makeRGB(255, 241, 211) })
 
-            var x = quality.cardPadding.toFloat() + 10
-            var y = quality.contentFontSize * 0.8f + quality.lineSpace
-            try {
-                val svg = loadSVG("icon/DISPUTE.svg")
-                if (svg != null) {
-                    val iconSize = quality.contentFontSize
-                    drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
-                    x += iconSize + quality.lineSpace
-                } else {
-                    logger.warn("未找到类型为 DISPUTE 的图标")
-                }
-            } catch (e: Exception) {
-                logger.warn("加载 DISPUTE 图标失败: ${e.message}")
+        var x = quality.cardPadding.toFloat() + 10
+        val y = quality.contentFontSize * 0.8f + quality.lineSpace
+        try {
+            val svg = loadSVG("icon/DISPUTE.svg")
+            if (svg != null) {
+                val iconSize = quality.contentFontSize
+                canvas.drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
+                x += iconSize + quality.lineSpace
+            } else {
+                logger.warn("未找到类型为 DISPUTE 的图标")
             }
-
-            drawTextArea(title, textCardRect, x, y, font, Paint().apply { color = Color.makeRGB(231, 139, 31) })
+        } catch (e: Exception) {
+            logger.warn("加载 DISPUTE 图标失败: ${e.message}")
         }
-    }.makeImageSnapshot()
+
+        canvas.drawTextArea(disputeTitle, textCardRect, x, y, font, Paint().apply { color = Color.makeRGB(231, 139, 31) })
+    }
 }
 
 suspend fun ModuleDynamic.Topic.drawGeneral(): Image {
@@ -245,27 +242,25 @@ suspend fun ModuleDynamic.Topic.drawGeneral(): Image {
         textCardHeight
     )
 
-    return Surface.makeRasterN32Premul(cardRect.width.toInt(), textCardHeight.toInt()).apply {
-        canvas.apply {
-            var x = quality.cardPadding.toFloat()
-            var y = quality.contentFontSize * 0.8f + quality.lineSpace
-            try {
-                val svg = loadSVG("icon/TOPIC.svg")
-                if (svg != null) {
-                    val iconSize = quality.contentFontSize
-                    drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
-                    x += iconSize + quality.lineSpace
-                } else {
-                    logger.warn("未找到类型为 TOPIC 的图标")
-                }
-            } catch (e: Exception) {
-                logger.warn("加载 TOPIC 图标失败: ${e.message}")
+    val topicName = name
+    return createImage(cardRect.width.toInt(), textCardHeight.toInt()) { canvas ->
+        var x = quality.cardPadding.toFloat()
+        val y = quality.contentFontSize * 0.8f + quality.lineSpace
+        try {
+            val svg = loadSVG("icon/TOPIC.svg")
+            if (svg != null) {
+                val iconSize = quality.contentFontSize
+                canvas.drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
+                x += iconSize + quality.lineSpace
+            } else {
+                logger.warn("未找到类型为 TOPIC 的图标")
             }
-
-            drawTextArea(name, textCardRect, x, y, font, linkPaint)
+        } catch (e: Exception) {
+            logger.warn("加载 TOPIC 图标失败: ${e.message}")
         }
-    }.makeImageSnapshot()
 
+        canvas.drawTextArea(topicName, textCardRect, x, y, font, linkPaint)
+    }
 }
 
 suspend fun ModuleDynamic.ContentDesc.drawGeneral(): Image {
@@ -298,79 +293,83 @@ suspend fun ModuleDynamic.ContentDesc.drawGeneral(): Image {
     var x = textCardRect.left
     var y = quality.contentFontSize + quality.lineSpace
 
-    return Surface.makeRasterN32Premul(cardRect.width.toInt(), textCardHeight.toInt()).apply {
-        canvas.apply {
-            val nodes = if (tra != null) {
-                richTextNodes.plus(traCutLineNode).plus(
-                    ModuleDynamic.ContentDesc.RichTextNode(
-                        "RICH_TEXT_NODE_TYPE_TEXT", tra, tra
-                    )
-                )
-            } else {
-                richTextNodes
-            }
-            nodes.forEach {
-                when (it.type) {
-                    "RICH_TEXT_NODE_TYPE_TEXT" -> {
-                        val text = it.text.replace("\r\n", "\n").replace("\r", "\n")
-                        val point = drawTextArea(text, textCardRect, x, y, font, generalPaint)
-                        x = point.x
-                        y = point.y
-                    }
+    val nodes = if (tra != null) {
+        richTextNodes.plus(traCutLineNode).plus(
+            ModuleDynamic.ContentDesc.RichTextNode(
+                "RICH_TEXT_NODE_TYPE_TEXT", tra, tra
+            )
+        )
+    } else {
+        richTextNodes
+    }
 
-                    "RICH_TEXT_NODE_TYPE_EMOJI" -> {
-                        getOrDownloadImage(it.emoji!!.iconUrl, CacheType.EMOJI)?.let { img ->
-                            val emojiSize = TextLine.make("🙂", font).height
+    val surface = Surface.makeRasterN32Premul(cardRect.width.toInt(), textCardHeight.toInt())
+    try {
+        val canvas = surface.canvas
+        nodes.forEach {
+            when (it.type) {
+                "RICH_TEXT_NODE_TYPE_TEXT" -> {
+                    val text = it.text.replace("\r\n", "\n").replace("\r", "\n")
+                    val point = canvas.drawTextArea(text, textCardRect, x, y, font, generalPaint)
+                    x = point.x
+                    y = point.y
+                }
 
-                            if (x + emojiSize > textCardRect.right) {
-                                x = textCardRect.left
-                                y += emojiSize + quality.lineSpace
-                            }
-                            val srcRect = Rect.makeXYWH(0f, 0f, img.width.toFloat(), img.height.toFloat())
-                            val tarRect = Rect.makeXYWH(x, y - emojiSize * 0.8f, emojiSize, emojiSize)
-                            drawImageRect(
-                                img,
-                                srcRect,
-                                tarRect,
-                                FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
-                                null,
-                                true
-                            )
-                            x += emojiSize
+                "RICH_TEXT_NODE_TYPE_EMOJI" -> {
+                    getOrDownloadImage(it.emoji!!.iconUrl, CacheType.EMOJI)?.let { img ->
+                        val emojiSize = TextLine.make("🙂", font).height
+
+                        if (x + emojiSize > textCardRect.right) {
+                            x = textCardRect.left
+                            y += emojiSize + quality.lineSpace
                         }
+                        val srcRect = Rect.makeXYWH(0f, 0f, img.width.toFloat(), img.height.toFloat())
+                        val tarRect = Rect.makeXYWH(x, y - emojiSize * 0.8f, emojiSize, emojiSize)
+                        canvas.drawImageRect(
+                            img,
+                            srcRect,
+                            tarRect,
+                            FilterMipmap(FilterMode.LINEAR, MipmapMode.NEAREST),
+                            null,
+                            true
+                        )
+                        x += emojiSize
                     }
+                }
 
-                    "RICH_TEXT_NODE_TYPE_WEB",
-                    "RICH_TEXT_NODE_TYPE_VOTE",
-                    "RICH_TEXT_NODE_TYPE_LOTTERY",
-                    "RICH_TEXT_NODE_TYPE_BV" -> {
-                        try {
-                            val svg = loadSVG("icon/${it.type}.svg")
-                            if (svg != null) {
-                                val iconSize = quality.contentFontSize
-                                drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
-                                x += iconSize
-                            } else {
-                                logger.warn("未找到类型为 ${it.type} 的图标")
-                            }
-                        } catch (e: Exception) {
-                            logger.warn("加载 ${it.type} 图标失败: ${e.message}")
+                "RICH_TEXT_NODE_TYPE_WEB",
+                "RICH_TEXT_NODE_TYPE_VOTE",
+                "RICH_TEXT_NODE_TYPE_LOTTERY",
+                "RICH_TEXT_NODE_TYPE_BV" -> {
+                    try {
+                        val svg = loadSVG("icon/${it.type}.svg")
+                        if (svg != null) {
+                            val iconSize = quality.contentFontSize
+                            canvas.drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
+                            x += iconSize
+                        } else {
+                            logger.warn("未找到类型为 ${it.type} 的图标")
                         }
-
-                        val point = drawTextArea(it.text, textCardRect, x, y, font, linkPaint)
-                        x = point.x
-                        y = point.y
+                    } catch (e: Exception) {
+                        logger.warn("加载 ${it.type} 图标失败: ${e.message}")
                     }
 
-                    else -> {
-                        val point = drawTextArea(it.text, textCardRect, x, y, font, linkPaint)
-                        x = point.x
-                        y = point.y
-                    }
+                    val point = canvas.drawTextArea(it.text, textCardRect, x, y, font, linkPaint)
+                    x = point.x
+                    y = point.y
+                }
+
+                else -> {
+                    val point = canvas.drawTextArea(it.text, textCardRect, x, y, font, linkPaint)
+                    x = point.x
+                    y = point.y
                 }
             }
         }
-    }.makeImageSnapshot(IRect.makeXYWH(0, 0, cardRect.width.toInt(), ceil(y + quality.lineSpace * 2).toInt()))!!
+        return surface.makeImageSnapshot(IRect.makeXYWH(0, 0, cardRect.width.toInt(), ceil(y + quality.lineSpace * 2).toInt()))!!
+    } finally {
+        surface.close()
+    }
 }
 
 sealed class RichText(
@@ -475,63 +474,66 @@ suspend fun Canvas.drawTextArea(text: String, rect: Rect, textX: Float, textY: F
 }
 
 suspend fun ModuleAuthor.drawForward(time: String): Image {
-    return Surface.makeRasterN32Premul(
+    val authorFace = face
+    val authorName = name
+    val authorVerify = officialVerify?.type
+    return createImage(
         quality.imageWidth - quality.cardMargin * 2,
         (quality.faceSize + quality.cardPadding).toInt()
-    ).apply {
-        canvas.apply {
+    ) { canvas ->
+        val faceSize = quality.faceSize * 0.6f
+        canvas.drawAvatar(authorFace, "", authorVerify, faceSize, quality.verifyIconSize * 0.8f, true)
 
-            val faceSize = quality.faceSize * 0.6f
-            drawAvatar(face, "", officialVerify?.type, faceSize, quality.verifyIconSize * 0.8f, true)
+        val textLineName = TextLine.make(authorName, font.makeWithSize(quality.nameFontSize))
+        val textLineTime = TextLine.make(time, font.makeWithSize(quality.subTitleFontSize))
 
-            val textLineName = TextLine.make(name, font.makeWithSize(quality.nameFontSize))
-            val textLineTime = TextLine.make(time, font.makeWithSize(quality.subTitleFontSize))
+        var x = faceSize + quality.cardPadding * 2.5f
+        var y = ((faceSize - quality.nameFontSize) / 2) + quality.nameFontSize + quality.cardPadding
 
-            var x = faceSize + quality.cardPadding * 2.5f
-            var y = ((faceSize - quality.nameFontSize) / 2) + quality.nameFontSize + quality.cardPadding
+        canvas.drawTextLine(textLineName, x, y, Paint().apply { color = theme.nameColor })
 
-            drawTextLine(textLineName, x, y, Paint().apply { color = theme.nameColor })
-
-            y -= (quality.nameFontSize - quality.subTitleFontSize) / 2
-            x += textLineName.width + quality.cardPadding
-            drawTextLine(textLineTime, x, y, Paint().apply { color = theme.subTitleColor })
-
-        }
-    }.makeImageSnapshot()
+        y -= (quality.nameFontSize - quality.subTitleFontSize) / 2
+        x += textLineName.width + quality.cardPadding
+        canvas.drawTextLine(textLineTime, x, y, Paint().apply { color = theme.subTitleColor })
+    }
 }
 
 suspend fun ModuleAuthor.drawGeneral(time: String, link: String, themeColor: Int): Image {
-    return Surface.makeRasterN32Premul(
+    val authorFace = face
+    val authorName = name
+    val authorPendant = pendant?.image
+    val authorVerify = officialVerify?.type
+    val authorDecorate = decorate
+    val authorIconBadge = iconBadge
+    return createImage(
         quality.imageWidth - quality.cardMargin * 2,
         quality.pendantSize.toInt()
-    ).apply surface@{
-        canvas.apply {
-            drawAvatar(face, pendant?.image, officialVerify?.type, quality.faceSize, quality.verifyIconSize)
+    ) { canvas ->
+        canvas.drawAvatar(authorFace, authorPendant, authorVerify, quality.faceSize, quality.verifyIconSize)
 
-            val textLineName = TextLine.make(name, font.makeWithSize(quality.nameFontSize))
-            val textLineTime = TextLine.make(time, font.makeWithSize(quality.subTitleFontSize))
+        val textLineName = TextLine.make(authorName, font.makeWithSize(quality.nameFontSize))
+        val textLineTime = TextLine.make(time, font.makeWithSize(quality.subTitleFontSize))
 
-            var x = quality.faceSize + quality.cardPadding * 3.2f
-            val space = (quality.pendantSize - quality.nameFontSize - quality.subTitleFontSize) / 3
-            var y = quality.nameFontSize + space * 1.25f
+        var x = quality.faceSize + quality.cardPadding * 3.2f
+        val space = (quality.pendantSize - quality.nameFontSize - quality.subTitleFontSize) / 3
+        var y = quality.nameFontSize + space * 1.25f
 
-            drawTextLine(textLineName, x, y, Paint().apply { color = theme.nameColor })
+        canvas.drawTextLine(textLineName, x, y, Paint().apply { color = theme.nameColor })
 
-            y += quality.subTitleFontSize + space * 0.5f
-            drawTextLine(textLineTime, x, y, Paint().apply { color = theme.subTitleColor })
+        y += quality.subTitleFontSize + space * 0.5f
+        canvas.drawTextLine(textLineTime, x, y, Paint().apply { color = theme.subTitleColor })
 
-            iconBadge?.let {
-                val img = getOrDownloadImage(it.renderImg, CacheType.IMAGES)!!
-                val iconHeight = quality.subTitleFontSize
-                val iconWidth = img.width / img.height * iconHeight
-                x += textLineTime.width + quality.subTitleFontSize * 0.5f
-                y -= textLineTime.height - iconHeight / 2
-                drawImageRRect(img, RRect.Companion.makeXYWH(x, y, iconWidth, iconHeight, 0f))
-            }
-
-            drawOrnament(decorate, link, themeColor)
+        authorIconBadge?.let {
+            val img = getOrDownloadImage(it.renderImg, CacheType.IMAGES)!!
+            val iconHeight = quality.subTitleFontSize
+            val iconWidth = img.width / img.height * iconHeight
+            x += textLineTime.width + quality.subTitleFontSize * 0.5f
+            y -= textLineTime.height - iconHeight / 2
+            canvas.drawImageRRect(img, RRect.Companion.makeXYWH(x, y, iconWidth, iconHeight, 0f))
         }
-    }.makeImageSnapshot()
+
+        canvas.drawOrnament(authorDecorate, link, themeColor)
+    }
 }
 
 suspend fun Canvas.drawOrnament(decorate: ModuleAuthor.Decorate?, link: String?, qrCodeColor: Int?) {

@@ -26,9 +26,9 @@ suspend fun LiveInfo.drawLive(): Image {
     val avatar = drawAvatar()
     val fw = cardRect.width - quality.cardOutlineWidth / 2
     val fallbackUrl = imgApi(cover, fw.toInt(), (fw * 0.625).toInt())
-    val cover = getOrDownloadImageDefault(cover, fallbackUrl, CacheType.IMAGES)
+    val coverImg = getOrDownloadImageDefault(cover, fallbackUrl, CacheType.IMAGES)
 
-    val height = (avatar.height + quality.contentSpace + cover.height * cardRect.width / cover.width).toInt()
+    val height = (avatar.height + quality.contentSpace + coverImg.height * cardRect.width / coverImg.width).toInt()
 
     val footerTemplate = BiliConfigManager.config.templateConfig.footer.liveFooter
     val footerParagraph = if (footerTemplate.isNotBlank()) {
@@ -42,106 +42,108 @@ suspend fun LiveInfo.drawLive(): Image {
         ParagraphBuilder(footerParagraphStyle, FontUtils.fonts).addText(footer).build().layout(cardRect.width)
     } else null
 
-    return Surface.makeRasterN32Premul(
+    val liveRoomId = roomId
+    return createImage(
         (cardRect.width + margin).toInt(),
         height + quality.badgeHeight + margin + (footerParagraph?.height?.toInt() ?: 0)
-    ).apply {
-        canvas.apply {
+    ) { canvas ->
+        val rrect = RRect.makeComplexXYWH(
+            margin / 2f,
+            quality.badgeHeight + margin / 2f,
+            cardRect.width,
+            height.toFloat(),
+            cardBadgeArc
+        )
 
-            val rrect = RRect.makeComplexXYWH(
-                margin / 2f,
-                quality.badgeHeight + margin / 2f,
-                cardRect.width,
-                height.toFloat(),
-                cardBadgeArc
+        canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
+
+        if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
+            val svg = SVGDOM(Data.makeFromBytes(loadResourceBytes("icon/LIVE.svg")))
+            canvas.drawBadge(
+                "直播",
+                font,
+                theme.mainLeftBadge.fontColor,
+                theme.mainLeftBadge.bgColor,
+                rrect,
+                Position.TOP_LEFT,
+                svg.makeImage(quality.contentFontSize, quality.contentFontSize)
             )
-
-            drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
-
-            if (BiliConfigManager.config.imageConfig.badgeEnable.left) {
-                val svg = SVGDOM(Data.makeFromBytes(loadResourceBytes("icon/LIVE.svg")))
-                drawBadge(
-                    "直播",
-                    font,
-                    theme.mainLeftBadge.fontColor,
-                    theme.mainLeftBadge.bgColor,
-                    rrect,
-                    Position.TOP_LEFT,
-                    svg.makeImage(quality.contentFontSize, quality.contentFontSize)
-                )
-            }
-            if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
-                drawBadge(roomId.toString(), font, Color.WHITE, Color.makeRGB(72, 199, 240), rrect, Position.TOP_RIGHT)
-            }
-
-            drawCard(rrect)
-
-            var top = quality.cardMargin + quality.badgeHeight.toFloat()
-
-            drawScaleWidthImage(avatar, cardRect.width, quality.cardMargin.toFloat(), top)
-            top += avatar.height + quality.contentSpace
-
-            val dst = RRect.makeXYWH(
-                quality.cardMargin.toFloat(),
-                top,
-                cardRect.width - quality.cardOutlineWidth / 2,
-                (cardRect.width * cover.height / cover.width)  - quality.cardOutlineWidth / 2,
-                quality.cardArc
-            )
-            drawImageRRect(cover, dst)
-
-            footerParagraph?.paint(this, cardRect.left, rrect.bottom + quality.cardMargin / 2)
-
         }
-    }.makeImageSnapshot()
+        if (BiliConfigManager.config.imageConfig.badgeEnable.right) {
+            canvas.drawBadge(liveRoomId.toString(), font, Color.WHITE, Color.makeRGB(72, 199, 240), rrect, Position.TOP_RIGHT)
+        }
+
+        canvas.drawCard(rrect)
+
+        var top = quality.cardMargin + quality.badgeHeight.toFloat()
+
+        canvas.drawScaleWidthImage(avatar, cardRect.width, quality.cardMargin.toFloat(), top)
+        top += avatar.height + quality.contentSpace
+
+        val dst = RRect.makeXYWH(
+            quality.cardMargin.toFloat(),
+            top,
+            cardRect.width - quality.cardOutlineWidth / 2,
+            (cardRect.width * coverImg.height / coverImg.width)  - quality.cardOutlineWidth / 2,
+            quality.cardArc
+        )
+        canvas.drawImageRRect(coverImg, dst)
+
+        footerParagraph?.paint(canvas, cardRect.left, rrect.bottom + quality.cardMargin / 2)
+    }
 }
 
 suspend fun LiveInfo.drawAvatar(): Image {
-    return Surface.makeRasterN32Premul(
+    val liveFace = face
+    val liveTitle = title
+    val liveUname = uname
+    val liveTime = liveTime
+    val liveUid = uid
+    val liveRoomId = roomId
+    val liveArea = area
+    return createImage(
         cardRect.width.toInt(),
         (quality.faceSize + quality.cardPadding * 2f).toInt()
-    ).apply surface@{
-        canvas.apply {
-            drawAvatar(face, null, null, quality.faceSize, quality.verifyIconSize)
+    ) { canvas ->
+        canvas.drawAvatar(liveFace, null, null, quality.faceSize, quality.verifyIconSize)
 
-            val paragraphStyle = ParagraphStyle().apply {
-                maxLinesCount = 1
-                ellipsis = "..."
-                alignment = Alignment.LEFT
-                textStyle = titleTextStyle.apply {
-                    fontSize = quality.nameFontSize
-                }
+        val paragraphStyle = ParagraphStyle().apply {
+            maxLinesCount = 1
+            ellipsis = "..."
+            alignment = Alignment.LEFT
+            textStyle = titleTextStyle.apply {
+                fontSize = quality.nameFontSize
             }
-
-            val w = cardContentRect.width - quality.pendantSize -
-                if (BiliConfigManager.config.imageConfig.cardOrnament == "QrCode" ) quality.ornamentHeight else 0f
-
-            val titleParagraph =
-                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(title).build()
-                    .layout(w)
-            paragraphStyle.apply {
-                textStyle = descTextStyle.apply {
-                    fontSize = quality.subTitleFontSize
-                }
-            }
-            val timeParagraph =
-                ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("$uname  ${liveTime.formatRelativeTime}").build()
-                    .layout(w)
-
-            val x = quality.faceSize + quality.cardPadding * 3f
-            val space = (quality.pendantSize - quality.nameFontSize - quality.subTitleFontSize) / 3
-            var y =  space * 1.25f
-
-            titleParagraph.paint(this, x, y)
-
-            y += quality.nameFontSize + space * 0.5f
-            timeParagraph.paint(this, x, y)
-
-            val color = BiliConfigManager.data.dynamic[uid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
-            val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }.first()
-            drawLiveOrnament("https://live.bilibili.com/$roomId", colors, area)
         }
-    }.makeImageSnapshot()
+
+        val w = cardContentRect.width - quality.pendantSize -
+            if (BiliConfigManager.config.imageConfig.cardOrnament == "QrCode" ) quality.ornamentHeight else 0f
+
+        val titleParagraph =
+            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText(liveTitle).build()
+                .layout(w)
+        paragraphStyle.apply {
+            textStyle = descTextStyle.apply {
+                fontSize = quality.subTitleFontSize
+            }
+        }
+        val timeParagraph =
+            ParagraphBuilder(paragraphStyle, FontUtils.fonts).addText("$liveUname  ${liveTime.formatRelativeTime}").build()
+                .layout(w)
+
+        val x = quality.faceSize + quality.cardPadding * 3f
+        val space = (quality.pendantSize - quality.nameFontSize - quality.subTitleFontSize) / 3
+        var y =  space * 1.25f
+
+        titleParagraph.paint(canvas, x, y)
+
+        y += quality.nameFontSize + space * 0.5f
+        timeParagraph.paint(canvas, x, y)
+
+        val color = BiliConfigManager.data.dynamic[liveUid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
+        val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }.first()
+        canvas.drawLiveOrnament("https://live.bilibili.com/$liveRoomId", colors, liveArea)
+    }
 }
 
 fun Canvas.drawLiveOrnament(link: String?, qrCodeColor: Int?, label: String?) {
