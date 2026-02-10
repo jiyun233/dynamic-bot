@@ -2,6 +2,7 @@
 
 import org.slf4j.LoggerFactory
 import top.bilibili.BiliConfigManager
+import top.bilibili.core.BiliBiliBot
 import top.bilibili.utils.ImageCache
 import top.bilibili.utils.cachePath
 import java.nio.file.Path
@@ -14,17 +15,30 @@ object CacheClearTasker : BiliTasker() {
 
     private val expires by BiliConfigManager.config.cacheConfig::expires
 
+    // ✅ P3修复: 连续失败计数器和告警阈值
+    private var consecutiveFailures = 0
+    private const val FAILURE_THRESHOLD = 3  // 连续失败3次才告警
+
     override suspend fun main() {
         logger.info("开始执行定时缓存清理任务...")
+
+        var hasError = false
+        var errorMessage: String? = null
 
         // 清理配置的缓存目录（data/cache/*）
         var totalCleared = 0
         for (e in expires) {
             if (e.value > 0) {
-                val cleared = e.key.cachePath().clearExpireFile(e.value)
-                if (cleared > 0) {
-                    logger.info("清理 ${e.key} 缓存: $cleared 个文件")
-                    totalCleared += cleared
+                try {
+                    val cleared = e.key.cachePath().clearExpireFile(e.value)
+                    if (cleared > 0) {
+                        logger.info("清理 ${e.key} 缓存: $cleared 个文件")
+                        totalCleared += cleared
+                    }
+                } catch (ex: Exception) {
+                    hasError = true
+                    errorMessage = ex.message
+                    logger.error("清理 ${e.key} 缓存时出错: ${ex.message}", ex)
                 }
             }
         }
@@ -34,7 +48,24 @@ object CacheClearTasker : BiliTasker() {
         try {
             ImageCache.cleanExpiredCache()
         } catch (e: Exception) {
+            hasError = true
+            errorMessage = e.message
             logger.error("清理图片缓存时出错: ${e.message}", e)
+        }
+
+        // ✅ P3修复: 失败告警机制
+        if (hasError) {
+            consecutiveFailures++
+            if (consecutiveFailures >= FAILURE_THRESHOLD) {
+                logger.warn("缓存清理连续失败 $consecutiveFailures 次，发送管理员告警")
+                BiliBiliBot.sendAdminMessage(
+                    "⚠️ 缓存清理连续失败 $consecutiveFailures 次\n" +
+                    "错误: $errorMessage\n" +
+                    "请检查磁盘空间和文件权限"
+                )
+            }
+        } else {
+            consecutiveFailures = 0  // 成功则重置计数器
         }
 
         if (totalCleared > 0) {

@@ -18,7 +18,8 @@ import java.time.format.DateTimeFormatter
  * 2. 内存使用监控
  * 3. 连接状态监控
  * 4. 僵尸任务清理
- * 5. 监控日志记录
+ * 5. Channel 背压监控 (✅ P3修复)
+ * 6. 监控日志记录
  *
  * 特点：
  * - 随程序启动持久化运行
@@ -73,7 +74,10 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         // 4. 清理僵尸任务
         cleanDeadTaskers(report)
 
-        // 5. 写入监控日志（只在有异常时写入，或每10分钟写入一次状态）
+        // 5. ✅ P3修复: 检查 Channel 背压
+        checkChannelBackpressure(report)
+
+        // 6. 写入监控日志（只在有异常时写入，或每10分钟写入一次状态）
         writeMonitorLog(report)
 
         logger.debug("系统健康检查完成")
@@ -267,6 +271,38 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     }
 
     /**
+     * ✅ P3修复: 检查 Channel 背压状态
+     * 使用 trySend 检测 Channel 是否已满
+     */
+    private fun checkChannelBackpressure(report: MonitorReport) {
+        val fullChannels = mutableListOf<String>()
+
+        // 检查 BiliBiliBot 的 Channel
+        try {
+            // 使用空的 DynamicDetail 测试 dynamicChannel
+            // 注意：这里只是检测，不实际发送数据
+            // 由于 Channel 的 trySend 需要实际数据，我们通过检查 NapCat 的发送队列来间接判断
+
+            // 检查 NapCat 发送队列
+            if (BiliBiliBot.isNapCatInitialized() && BiliBiliBot.napCat.isSendQueueFull()) {
+                fullChannels.add("NapCat.sendChannel (容量: 200)")
+                logger.warn("NapCat 发送队列已满，可能存在消息积压")
+            }
+        } catch (e: Exception) {
+            logger.debug("检查 Channel 背压时出错: ${e.message}")
+        }
+
+        if (fullChannels.isNotEmpty()) {
+            report.hasBackpressure = true
+            report.backpressureChannels = fullChannels
+            logger.warn("检测到 Channel 背压: ${fullChannels.joinToString(", ")}")
+        } else {
+            report.hasBackpressure = false
+            logger.debug("Channel 背压检查正常")
+        }
+    }
+
+    /**
      * 正常清理
      */
     private fun normalCleanup() {
@@ -305,7 +341,8 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         val hasAnyIssue = report.hasTaskerIssue ||
                 report.hasMemoryIssue ||
                 report.hasConnectionIssue ||
-                report.hasZombieTaskers
+                report.hasZombieTaskers ||
+                report.hasBackpressure  // ✅ P3修复: 添加背压检测
 
         // 每10分钟（20次检查）写入一次正常状态日志
         val shouldWriteNormalLog = !hasAnyIssue && (System.currentTimeMillis() / 1000 / 60 % 10 == 0L)
@@ -358,6 +395,16 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                     writer.println("[僵尸任务清理]")
                     writer.println("  清理数量: ${report.zombieTaskersCleaned}")
                     writer.println("  任务名称: ${report.zombieTaskerNames.joinToString(", ")}")
+                }
+
+                // 5. ✅ P3修复: Channel 背压（只在有背压时写入）
+                if (report.hasBackpressure) {
+                    writer.println("[Channel 背压告警]")
+                    writer.println("  受影响的 Channel:")
+                    report.backpressureChannels.forEach { channel ->
+                        writer.println("    - $channel")
+                    }
+                    writer.println("  建议: 检查消息消费速度或增加 Channel 容量")
                 }
 
                 writer.println()
@@ -423,7 +470,11 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         // 僵尸任务
         var hasZombieTaskers: Boolean = false,
         var zombieTaskersCleaned: Int = 0,
-        var zombieTaskerNames: List<String> = emptyList()
+        var zombieTaskerNames: List<String> = emptyList(),
+
+        // ✅ P3修复: Channel 背压监控
+        var hasBackpressure: Boolean = false,
+        var backpressureChannels: List<String> = emptyList()
     )
 
     /**

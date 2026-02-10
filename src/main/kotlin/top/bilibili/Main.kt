@@ -25,7 +25,7 @@ fun main(args: Array<String>) {
         // 显示帮助信息
         if (showHelp) {
             println("""
-                BiliBili 动态推送 Bot v1.4
+                BiliBili 动态推送 Bot v1.5
 
                 用法: java -jar dynamic-bot.jar [选项]
 
@@ -40,10 +40,29 @@ fun main(args: Array<String>) {
             exitProcess(0)
         }
 
-        // 添加 JVM 关闭钩子
+        // ✅ P3修复: 增强 shutdown hook，添加超时保护
         Runtime.getRuntime().addShutdownHook(Thread {
             logger.info("收到停止信号，正在关闭...")
-            BiliBiliBot.stop()
+            try {
+                val shutdownThread = Thread {
+                    try {
+                        BiliBiliBot.stop()
+                    } catch (e: Exception) {
+                        logger.error("停止 Bot 时发生错误: ${e.message}", e)
+                    }
+                }
+                shutdownThread.start()
+                shutdownThread.join(15000)  // 最多等待15秒
+
+                if (shutdownThread.isAlive) {
+                    logger.warn("停止操作超时 (15秒)，强制退出")
+                    shutdownThread.interrupt()
+                } else {
+                    logger.info("Bot 已正常停止")
+                }
+            } catch (e: Exception) {
+                logger.error("关闭过程中发生错误: ${e.message}", e)
+            }
         })
 
         // 启动 Bot（传入命令行参数）

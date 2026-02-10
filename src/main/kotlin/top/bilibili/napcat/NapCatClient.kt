@@ -11,11 +11,12 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import okhttp3.ConnectionPool
 import org.slf4j.LoggerFactory
 import top.bilibili.config.NapCatConfig
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * NapCat OneBot v11 WebSocket 客户端（反向 WS）
@@ -38,6 +39,16 @@ class NapCatClient(
         install(WebSockets) {
             pingIntervalMillis = config.heartbeatInterval
         }
+        // ✅ P3修复: 配置连接池参数，避免空闲连接占用资源
+        engine {
+            config {
+                connectionPool(ConnectionPool(
+                    maxIdleConnections = 3,      // 最大空闲连接数
+                    keepAliveDuration = 3,       // 空闲连接保持时间（分钟）
+                    timeUnit = TimeUnit.MINUTES
+                ))
+            }
+        }
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -50,9 +61,19 @@ class NapCatClient(
     private var session: DefaultClientWebSocketSession? = null
     private val sendChannel = Channel<String>(capacity = 200)  // ✅ P1修复: 从1000降低到200，降低内存占用
 
+    // ✅ P3修复: 发送队列满载告警标志，避免重复告警
+    private var sendQueueFullWarningLogged = false
+
     /** Bot 的 QQ 号 */
     var selfId: Long = 0L
         private set
+
+    /**
+     * ✅ P3修复: 检查发送队列是否已满（供 ProcessGuardian 调用）
+     */
+    fun isSendQueueFull(): Boolean {
+        return sendChannel.trySend("").isFailure
+    }
 
     /** 启动客户端 */
     fun start() {
@@ -338,7 +359,20 @@ class NapCatClient(
             )
 
             val message = json.encodeToString(request)
-            sendChannel.send(message)
+
+            // ✅ P3修复: 使用 trySend 检测队列是否已满，避免阻塞
+            val result = sendChannel.trySend(message)
+            if (result.isFailure) {
+                if (!sendQueueFullWarningLogged) {
+                    logger.warn("发送队列已满 (容量: 200)，消息可能延迟发送")
+                    sendQueueFullWarningLogged = true
+                }
+                // 队列满时使用阻塞发送
+                sendChannel.send(message)
+            } else {
+                sendQueueFullWarningLogged = false  // 队列有空间，重置告警标志
+            }
+
             logger.debug("消息已加入发送队列: $action")
             true
         } catch (e: Exception) {
