@@ -225,7 +225,12 @@ suspend fun ModuleDispute.drawGeneral(): Image {
             val svg = loadSVG("icon/DISPUTE.svg")
             if (svg != null) {
                 val iconSize = quality.contentFontSize
-                canvas.drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
+                val iconImage = svg.makeImage(iconSize, iconSize)
+                try {
+                    canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
+                } finally {
+                    iconImage.close()
+                }
                 x += iconSize + quality.lineSpace
             } else {
                 logger.warn("未找到类型为 DISPUTE 的图标")
@@ -258,7 +263,12 @@ suspend fun ModuleDynamic.Topic.drawGeneral(): Image {
             val svg = loadSVG("icon/TOPIC.svg")
             if (svg != null) {
                 val iconSize = quality.contentFontSize
-                canvas.drawImage(svg.makeImage(iconSize, iconSize), x, y - quality.contentFontSize * 0.9f)
+                val iconImage = svg.makeImage(iconSize, iconSize)
+                try {
+                    canvas.drawImage(iconImage, x, y - quality.contentFontSize * 0.9f)
+                } finally {
+                    iconImage.close()
+                }
                 x += iconSize + quality.lineSpace
             } else {
                 logger.warn("未找到类型为 TOPIC 的图标")

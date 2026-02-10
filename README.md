@@ -1,4 +1,4 @@
-# BiliBili 动态推送 Bot v1.5.3
+# BiliBili 动态推送 Bot v1.5.4
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -502,6 +502,18 @@ Windows 用户可使用自动化脚本简化操作：
    - 文档和示例配置
 
 ## 更新日志
+
+### v1.5.4 (2026-02-11)
+
+**全面代码审计与资源泄漏修复** 🔧
+- ✅ **完成所有模块的自维护代码审计**
+  - API 模块、Service 模块、数据模型、Tasker 模块全部审计完成
+  - 验证 DynamicService 容量保护 (MAX_SUBSCRIPTIONS=50000)
+  - 验证 ListenerTasker LRU 缓存 (MAX_CACHE_SIZE=10000)
+- ✅ **修复 Skia 绘图资源泄漏**
+  - 修复 DynamicModuleDraw.kt 中 DISPUTE/TOPIC 图标 Image 未关闭
+  - 修复 LiveDraw.kt 中 coverImg 未关闭
+- ✅ **结论**: 全部模块审计完成，未发现新的资源泄漏问题
 
 ### v1.5.3 (2026-02-11)
 
