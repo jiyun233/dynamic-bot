@@ -93,5 +93,6 @@ abstract class BiliTasker(
     override fun cancel(cause: CancellationException?) {
         job?.cancel(cause)
         coroutineContext.cancelChildren(cause)
+        taskers.remove(this)  // ✅ P0修复: 从列表中移除，防止内存泄漏
     }
 }

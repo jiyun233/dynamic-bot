@@ -102,9 +102,11 @@ data/
 
 temp/                    # 临时文件目录（二维码、缓存等）
 
-logs/                
+logs/
 ├── bilibili-bot.log     # 主日志文件
-└── error.log            # 错误日志文件
+├── error.log            # 错误日志文件
+└── daemon/              # 守护进程监控日志目录
+    └── Daemon_YYYY-MM-DD.log  # 每日监控日志
 ```
 
 ### 3. 运行 Bot
@@ -500,6 +502,36 @@ Windows 用户可使用自动化脚本简化操作：
    - 文档和示例配置
 
 ## 更新日志
+
+### v1.5.1 (2026-02-10)
+
+**内存泄漏修复** 🔧
+- ✅ **P0 高风险修复**
+  - 修复 BiliTasker 任务取消后未从列表移除导致的内存泄漏
+  - 修复 SendTasker.messageQueue Channel 未关闭的问题
+  - 修复 eventCollectorJob 协程未等待完成的问题
+- ✅ **P1 中风险修复**
+  - 优化 NapCatClient.sendChannel 容量从 1000 降至 200，降低内存占用
+  - 修复 ListenerTasker 缓存清理协程 isActive 检查问题
+- ✅ **P2 低风险修复**
+  - 删除未使用的 missChannel，清理无用代码
+
+**新增守护进程** 🛡️
+- ✅ 新增 ProcessGuardian 综合守护进程
+  - 任务健康监控：每30秒检测已停止的任务
+  - 内存使用监控：监控 JVM 内存使用率，超过阈值自动清理
+  - 连接状态监控：监控 WebSocket 连接状态
+  - 僵尸任务清理：自动清理已停止的任务引用，防止内存泄漏
+  - 监控日志记录：将监控信息写入 `logs/daemon/Daemon_YYYY-MM-DD.log`
+    - 任务健康状态（异常时记录任务名）
+    - 内存使用（Top 5 内存占用组件）
+    - 连接状态（异常时记录）
+    - 僵尸任务清理记录
+
+**技术改进** ⚡
+- ✅ 所有资源正确管理，无资源泄漏
+- ✅ 使用 `PrintWriter.use {}` 确保文件写入后自动关闭
+- ✅ 守护进程随程序启动持久化运行
 
 ### v1.5 (2026-02-05)
 

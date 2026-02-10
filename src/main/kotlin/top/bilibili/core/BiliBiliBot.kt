@@ -105,7 +105,7 @@ object BiliBiliBot : CoroutineScope {
     val dynamicChannel = Channel<DynamicDetail>(20)
     val liveChannel = Channel<LiveDetail>(20)
     val messageChannel = Channel<BiliMessage>(20)
-    val missChannel = Channel<BiliMessage>(10)
+    // ✅ P2修复: 删除未使用的 missChannel
     val liveUsers = mutableMapOf<Long, Long>()
 
     /**
@@ -286,14 +286,16 @@ object BiliBiliBot : CoroutineScope {
                 dynamicChannel.close()
                 liveChannel.close()
                 messageChannel.close()
-                missChannel.close()
+                // ✅ P2修复: missChannel 已删除，不需要关闭
                 logger.debug("所有 Channel 已关闭")
             } catch (e: Exception) {
                 logger.warn("关闭 Channel 失败: ${e.message}", e)
             }
 
             // 2. ✅ 优先取消事件收集器
-            eventCollectorJob?.cancel()
+            runBlocking {
+                eventCollectorJob?.cancelAndJoin()  // ✅ P0修复: 等待协程完成，避免资源竞争
+            }
             eventCollectorJob = null
 
             // 3. 停止 NapCat 客户端
@@ -1945,6 +1947,10 @@ object BiliBiliBot : CoroutineScope {
 
             logger.info("启动 LogClearTasker...")
             top.bilibili.tasker.LogClearTasker.start()
+
+            // 启动守护进程（最后启动，监控所有其他任务）
+            logger.info("启动 ProcessGuardian 守护进程...")
+            top.bilibili.tasker.ProcessGuardian.start()
 
             logger.info("所有任务已启动")
         } catch (e: Exception) {

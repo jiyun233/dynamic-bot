@@ -48,7 +48,7 @@ class NapCatClient(
     val eventFlow = _eventFlow.asSharedFlow()
 
     private var session: DefaultClientWebSocketSession? = null
-    private val sendChannel = Channel<String>(capacity = 1000)
+    private val sendChannel = Channel<String>(capacity = 200)  // ✅ P1修复: 从1000降低到200，降低内存占用
 
     /** Bot 的 QQ 号 */
     var selfId: Long = 0L

@@ -49,6 +49,11 @@ object SendTasker : BiliTasker("SendTasker") {
         awaitCancellation()
     }
 
+    override fun after() {
+        // ✅ P0修复: 关闭 messageQueue，防止 Channel 泄漏
+        messageQueue.close()
+    }
+
     /**
      * 处理消息发送队列
      */

@@ -45,7 +45,8 @@ object ListenerTasker : BiliTasker("ListenerTasker") {
         }
 
         // 启动缓存清理协程
-        BiliBiliBot.launch {
+        // ✅ P1修复: 使用 this.launch 而不是 BiliBiliBot.launch，确保 isActive 检查的是 ListenerTasker 的状态
+        launch {
             while (isActive) {
                 delay(5000) // 每 5 秒清理一次
                 cleanExpiredCache()
