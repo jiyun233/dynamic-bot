@@ -64,9 +64,13 @@ object SkiaManager {
         logger.info("开始执行 Skia 清理...")
 
         // 1. 等待活动任务完成（带超时）
-        withTimeoutOrNull(30_000L) {
-            DrawingQueueManager.awaitAllCompleted()
-        } ?: logger.warn("等待活动任务完成超时，强制继续清理")
+        runCatching {
+            withTimeoutOrNull(30_000L) {
+                DrawingQueueManager.awaitAllCompleted()
+            } ?: logger.warn("等待活动任务完成超时，强制继续清理")
+        }.onFailure { e ->
+            logger.warn("等待活动任务完成时发生异常，强制继续清理", e)
+        }
 
         // 2. 清理全局缓存
         clearGlobalCaches()
