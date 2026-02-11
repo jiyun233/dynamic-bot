@@ -32,6 +32,7 @@ object DrawingQueueManager {
         }
 
         var acquired = false
+        var needsRollback = true  // Track if we need to rollback pending count
         try {
             // 2. Wait if cleaning
             while (isCleaning.get()) {
@@ -42,6 +43,7 @@ object DrawingQueueManager {
             semaphore.acquire()
             acquired = true
             pendingCount.decrementAndGet()
+            needsRollback = false  // Successfully moved from pending to active
             activeCount.incrementAndGet()
 
             // 4. Record activity
@@ -55,8 +57,8 @@ object DrawingQueueManager {
             if (acquired) {
                 activeCount.decrementAndGet()
                 semaphore.release()
-            } else {
-                // Didn't acquire semaphore, just decrement pending
+            } else if (needsRollback) {
+                // Exception occurred before acquiring semaphore
                 pendingCount.decrementAndGet()
             }
             lastActivityTime.set(System.currentTimeMillis())
