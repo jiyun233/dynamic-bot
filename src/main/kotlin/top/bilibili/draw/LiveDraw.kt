@@ -206,6 +206,7 @@ suspend fun LiveInfo.drawAvatar(session: DrawingSession): Image {
     )
     val canvas = surface.canvas
 
+    // Note: drawAvatar() uses internal try-finally for resource management
     canvas.drawAvatar(liveFace, null, null, quality.faceSize, quality.verifyIconSize)
 
     val paragraphStyle = ParagraphStyle().apply {

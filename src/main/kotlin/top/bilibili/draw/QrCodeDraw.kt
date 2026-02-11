@@ -57,23 +57,21 @@ suspend fun loginQrCode(url: String): Image {
             } else {
                 // Logo 不存在，绘制文字 "B"
                 val defaultTypeface = FontMgr.default.matchFamilyStyle("", FontStyle.NORMAL) ?: FontMgr.default.matchFamiliesStyle(arrayOf("sans-serif"), FontStyle.NORMAL)
-                val fallbackFont = Font(defaultTypeface, 50f)
+                val fallbackFont = Font(defaultTypeface, 50f).track()
                 val textLine = TextLine.make("B", fallbackFont).track()
                 canvas.drawTextLine(textLine, 110f, 140f, Paint().apply {
                     color = Color.WHITE
                 })
-                fallbackFont.close()
             }
         } catch (e: Exception) {
             // 如果加载失败，绘制简单的文字
             logger.warn("加载二维码中心图标失败: ${e.message}")
             val defaultTypeface = FontMgr.default.matchFamilyStyle("", FontStyle.NORMAL) ?: FontMgr.default.matchFamiliesStyle(arrayOf("sans-serif"), FontStyle.NORMAL)
-            val fallbackFont = Font(defaultTypeface, 50f)
+            val fallbackFont = Font(defaultTypeface, 50f).track()
             val textLine = TextLine.make("B", fallbackFont).track()
             canvas.drawTextLine(textLine, 110f, 140f, Paint().apply {
                 color = Color.WHITE
             })
-            fallbackFont.close()
         }
 
         surface.makeImageSnapshot().track()
