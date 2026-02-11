@@ -7,14 +7,16 @@ import org.jetbrains.skia.paragraph.ParagraphBuilder
 import org.jetbrains.skia.paragraph.ParagraphStyle
 import org.slf4j.LoggerFactory
 import java.util.*
+import java.util.Collections
 
 /**
  * 绘图会话 - 自动追踪和释放 Skia 资源
  */
 class DrawingSession : AutoCloseable {
-    private val resources = mutableListOf<AutoCloseable>()
+    private val resources = Collections.synchronizedList(mutableListOf<AutoCloseable>())
     private val sessionId = UUID.randomUUID().toString().take(8)
     private val creationTime = System.currentTimeMillis()
+    @Volatile
     private var isClosed = false
 
     private val logger = LoggerFactory.getLogger(DrawingSession::class.java)
@@ -42,6 +44,7 @@ class DrawingSession : AutoCloseable {
      */
     fun createImage(bytes: ByteArray): Image {
         val image = Image.makeFromEncoded(bytes)
+            ?: throw IllegalArgumentException("Failed to decode image from bytes")
         return image.track()
     }
 
@@ -55,7 +58,7 @@ class DrawingSession : AutoCloseable {
         build: ParagraphBuilder.() -> Unit
     ): Paragraph {
         val builder = ParagraphBuilder(style, fonts)
-        builder.build()
+        builder.apply(build)
         val paragraph = builder.build().layout(width)
         return paragraph.track()
     }
@@ -100,10 +103,14 @@ class DrawingSession : AutoCloseable {
         height: Int,
         crossinline draw: Canvas.() -> Unit
     ): Image {
-        val surface = createSurface(width, height)
-        surface.canvas.draw()
-        // 注意：返回的 Image 不追踪，由调用者负责关闭
-        return surface.makeImageSnapshot()
+        // Don't track the surface since we're returning the image untracked
+        val surface = Surface.makeRasterN32Premul(width, height)
+        try {
+            surface.canvas.draw()
+            return surface.makeImageSnapshot()
+        } finally {
+            surface.close()
+        }
     }
 
     /**
