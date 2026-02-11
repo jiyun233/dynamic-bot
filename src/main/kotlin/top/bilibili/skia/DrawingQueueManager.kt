@@ -24,35 +24,41 @@ object DrawingQueueManager {
      * 提交绘图任务
      */
     suspend fun <T> submit(block: suspend () -> T): T {
-        // 1. 检查队列是否已满
-        if (pendingCount.get() >= SkiaConfig.maxQueueSize) {
+        // 1. Atomically check and increment pending count
+        val currentPending = pendingCount.getAndIncrement()
+        if (currentPending >= SkiaConfig.maxQueueSize) {
+            pendingCount.decrementAndGet()
             throw DrawingQueueFullException("绘图队列已满，请稍后重试")
         }
 
-        // 2. 如果正在清理，等待清理完成
-        while (isCleaning.get()) {
-            delay(100)
-        }
-
-        // 3. 进入等待队列
-        pendingCount.incrementAndGet()
-
+        var acquired = false
         try {
-            // 4. 获取执行许可
+            // 2. Wait if cleaning
+            while (isCleaning.get()) {
+                delay(100)
+            }
+
+            // 3. Acquire semaphore
             semaphore.acquire()
+            acquired = true
             pendingCount.decrementAndGet()
             activeCount.incrementAndGet()
 
-            // 5. 记录活动时间
+            // 4. Record activity
             lastActivityTime.set(System.currentTimeMillis())
 
-            // 6. 执行绘图
+            // 5. Execute with timeout
             return withTimeout(SkiaConfig.drawingTimeoutMs) {
                 block()
             }
         } finally {
-            activeCount.decrementAndGet()
-            semaphore.release()
+            if (acquired) {
+                activeCount.decrementAndGet()
+                semaphore.release()
+            } else {
+                // Didn't acquire semaphore, just decrement pending
+                pendingCount.decrementAndGet()
+            }
             lastActivityTime.set(System.currentTimeMillis())
         }
     }
