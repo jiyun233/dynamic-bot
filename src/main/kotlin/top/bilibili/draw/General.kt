@@ -1,13 +1,91 @@
 ﻿package top.bilibili.draw
 
 import org.jetbrains.skia.*
+import org.jetbrains.skia.paragraph.FontCollection
+import org.jetbrains.skia.paragraph.Paragraph
+import org.jetbrains.skia.paragraph.ParagraphBuilder
+import org.jetbrains.skia.paragraph.ParagraphStyle
 import org.jetbrains.skia.svg.SVGDOM
 import top.bilibili.BiliConfigManager
 import top.bilibili.data.Theme
+import top.bilibili.skia.DrawingSession
+import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.loadResourceBytes
 import java.io.File
 import java.util.*
 
+
+// ==================== Skia 资源管理工具函数 ====================
+
+/**
+ * 安全地使用 TextLine，自动释放原生内存
+ * @param text 文本内容
+ * @param font 字体
+ * @param block 使用 TextLine 的操作
+ * @return block 的返回值
+ */
+inline fun <R> useTextLine(text: String, font: Font, block: (TextLine) -> R): R {
+    val textLine = TextLine.make(text, font)
+    return try {
+        block(textLine)
+    } finally {
+        textLine.close()
+    }
+}
+
+/**
+ * 安全地创建并使用 Paragraph，自动释放原生内存
+ * @param style 段落样式
+ * @param fonts 字体集合
+ * @param width 布局宽度
+ * @param buildBlock 构建段落的操作
+ * @param useBlock 使用段落的操作
+ * @return useBlock 的返回值
+ */
+inline fun <R> useParagraph(
+    style: ParagraphStyle,
+    fonts: FontCollection,
+    width: Float,
+    buildBlock: (ParagraphBuilder) -> Unit,
+    useBlock: (Paragraph) -> R
+): R {
+    val builder = ParagraphBuilder(style, fonts)
+    buildBlock(builder)
+    val paragraph = builder.build().layout(width)
+    return try {
+        useBlock(paragraph)
+    } finally {
+        paragraph.close()
+    }
+}
+
+/**
+ * 安全地创建 Paragraph 并返回，调用方负责关闭
+ * 用于需要保留 Paragraph 引用的场景
+ */
+inline fun buildParagraph(
+    style: ParagraphStyle,
+    fonts: FontCollection,
+    width: Float,
+    buildBlock: (ParagraphBuilder) -> Unit
+): Paragraph {
+    val builder = ParagraphBuilder(style, fonts)
+    buildBlock(builder)
+    return builder.build().layout(width)
+}
+
+/**
+ * 安全地使用多个 Paragraph，自动释放所有原生内存
+ */
+inline fun <R> useParagraphs(paragraphs: List<Paragraph>, block: () -> R): R {
+    return try {
+        block()
+    } finally {
+        paragraphs.forEach { runCatching { it.close() } }
+    }
+}
+
+// ==================== Surface/Image 创建函数 ====================
 
 /**
  * 安全地使用 Surface 创建图片，确保 Surface 被正确关闭释放原生内存
@@ -15,7 +93,12 @@ import java.util.*
  * @param height 图片高度
  * @param block 绑定操作
  * @return 生成的 Image
+ * @deprecated 使用 createImageWithSession 替代，提供更好的资源管理
  */
+@Deprecated(
+    message = "使用 createImageWithSession 替代，提供更好的资源管理",
+    replaceWith = ReplaceWith("createImageWithSession(width, height, block)")
+)
 inline fun createImage(width: Int, height: Int, block: (Canvas) -> Unit): Image {
     val surface = Surface.makeRasterN32Premul(width, height)
     return try {
@@ -23,6 +106,26 @@ inline fun createImage(width: Int, height: Int, block: (Canvas) -> Unit): Image 
         surface.makeImageSnapshot()
     } finally {
         surface.close()
+    }
+}
+
+/**
+ * 使用 DrawingSession 创建图片（推荐）
+ * 自动追踪和释放 Skia 资源，防止内存泄漏
+ * @param width 图片宽度
+ * @param height 图片高度
+ * @param block 绑定操作，在 DrawingSession 上下文中执行
+ * @return 生成的 Image
+ */
+suspend inline fun createImageWithSession(
+    width: Int,
+    height: Int,
+    crossinline block: DrawingSession.(Canvas) -> Unit
+): Image {
+    return SkiaManager.executeDrawing {
+        val surface = createSurface(width, height)
+        block(surface.canvas)
+        surface.makeImageSnapshot()
     }
 }
 
