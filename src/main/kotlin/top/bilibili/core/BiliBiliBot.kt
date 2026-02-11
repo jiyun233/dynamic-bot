@@ -1948,6 +1948,9 @@ object BiliBiliBot : CoroutineScope {
             logger.info("启动 LogClearTasker...")
             top.bilibili.tasker.LogClearTasker.start()
 
+            logger.info("启动 SkiaCleanupTasker...")
+            top.bilibili.tasker.SkiaCleanupTasker.start()
+
             // 启动守护进程（最后启动，监控所有其他任务）
             logger.info("启动 ProcessGuardian 守护进程...")
             top.bilibili.tasker.ProcessGuardian.start()
