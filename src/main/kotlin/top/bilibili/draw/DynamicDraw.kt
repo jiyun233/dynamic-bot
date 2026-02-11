@@ -15,6 +15,8 @@ import top.bilibili.tasker.DynamicMessageTasker.isUnlocked
 import top.bilibili.utils.*
 import top.bilibili.utils.FontUtils.loadTypeface
 import top.bilibili.utils.FontUtils.matchFamily
+import top.bilibili.skia.DrawingSession
+import top.bilibili.skia.SkiaManager
 
 
 val logger by BiliBiliBot::logger
@@ -206,19 +208,52 @@ val generalPaint = Paint().apply {
 
 
 suspend fun DynamicItem.makeDrawDynamic(colors: List<Int>): String {
-    val dynamic = drawDynamic(colors.first(), false)
-    val img = makeCardBg(dynamic.height, colors) {
-        it.drawImage(dynamic, 0f, 0f)
-    }
-    // 关闭中间 Image，释放原生内存
-    return try {
+    return SkiaManager.executeDrawing {
+        val dynamic = this@makeDrawDynamic.drawDynamic(this, colors.first(), false)
+        val img = makeCardBg(this, dynamic.height, colors) {
+            it.drawImage(dynamic, 0f, 0f)
+        }
         cacheImage(img, "$mid/$idStr.png", CacheType.DRAW_DYNAMIC)
-    } finally {
-        dynamic.close()
-        img.close()
+        // All resources automatically released when session closes
     }
 }
 
+suspend fun DynamicItem.drawDynamic(session: DrawingSession, themeColor: Int, isForward: Boolean = false): Image {
+    val orig = orig?.drawDynamic(session, themeColor, type == DYNAMIC_TYPE_FORWARD)
+
+    var imgList = modules.makeGeneral(session, formatRelativeTime, link, type, themeColor, isForward, isUnlocked())
+
+    // 调整附加卡片顺序
+    if (orig != null) {
+        imgList = if (this.modules.moduleDynamic.additional != null) {
+            val result = ArrayList<Image>(imgList.size + 1)
+            result.addAll(imgList.subList(0, imgList.size - 1))
+            result.add(orig)
+            result.add(imgList.last())
+            result
+        } else {
+            imgList.plus(orig)
+        }
+    }
+
+    var plusHeight = 0
+    if (type == DynamicType.DYNAMIC_TYPE_WORD || type == DYNAMIC_TYPE_NONE) {
+        plusHeight += quality.contentSpace * 2
+    }
+
+    val footer = if (!isForward) {
+        buildFooter(modules.moduleAuthor.name, modules.moduleAuthor.mid, did, formatRelativeTime, type.text)
+    } else null
+
+    // assembleCard 会关闭 imgList 中的所有 Image
+    return with(session) {
+        imgList.assembleCard(session, did, footer, plusHeight, isForward, closeInputImages = true).track()
+    }
+
+}
+
+// Backward-compatible version for external callers (deprecated)
+@Deprecated("Use version with DrawingSession for better resource management", ReplaceWith("drawDynamic(session, themeColor, isForward)"))
 suspend fun DynamicItem.drawDynamic(themeColor: Int, isForward: Boolean = false): Image {
     val orig = orig?.drawDynamic(themeColor, type == DYNAMIC_TYPE_FORWARD)
 
@@ -265,6 +300,7 @@ fun buildFooter(name: String, uid: Long, id: String, time: String, type: String)
 
 /**
  * 将多个 Image 组装成一张卡片
+ * @param session DrawingSession for resource management
  * @param id 动态 ID
  * @param footer 页脚文本
  * @param plusHeight 额外高度
@@ -273,6 +309,93 @@ fun buildFooter(name: String, uid: Long, id: String, time: String, type: String)
  * @param closeInputImages 是否在组装完成后关闭输入的 Image 列表，默认为 false
  * @return 组装后的 Image
  */
+fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String? = null, plusHeight: Int = 0, isForward: Boolean = false, tag: String? = null, closeInputImages: Boolean = false): Image {
+    val imageConfig = BiliConfigManager.config.imageConfig
+    val height = sumOf {
+        if (it.width > cardRect.width) {
+            (cardRect.width * it.height / it.width + quality.contentSpace).toInt()
+        } else {
+            it.height + quality.contentSpace
+        }
+    } + plusHeight
+
+    val footerParagraph = if (footer != null) {
+        with(session) {
+            ParagraphBuilder(footerParagraphStyle, FontUtils.fonts).addText(footer).build().layout(cardRect.width).track()
+        }
+    } else null
+
+    val margin = if (isForward) quality.cardPadding * 2 else quality.cardMargin * 2
+    val imgList = this
+
+    return try {
+        val surface = session.createSurface(
+            (cardRect.width + margin).toInt(),
+            height + quality.badgeHeight + margin + (footerParagraph?.height?.toInt() ?: 0)
+        )
+        val canvas = surface.canvas
+
+        val rrect = RRect.makeComplexXYWH(
+            margin / 2f,
+            quality.badgeHeight + margin / 2f,
+            cardRect.width,
+            height.toFloat(),
+            cardBadgeArc
+        )
+
+        if (isForward) {
+            canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.smallCardShadow)
+        } else {
+            canvas.drawRectShadowAntiAlias(rrect.inflate(1f), theme.cardShadow)
+        }
+
+        if (imageConfig.badgeEnable.left) {
+            val svg = loadSVG("icon/${if (isForward) "FORWARD" else "BILIBILI_LOGO"}.svg")
+            val badgeImage = with(session) {
+                svg?.makeImage(quality.contentFontSize, quality.contentFontSize)?.track()
+            }
+            canvas.drawBadge(
+                tag ?: if (isForward) "转发动态" else "动态",
+                font,
+                theme.mainLeftBadge.fontColor,
+                theme.mainLeftBadge.bgColor,
+                rrect,
+                TOP_LEFT,
+                badgeImage
+            )
+        }
+        if (imageConfig.badgeEnable.right) {
+            canvas.drawBadge(id, font, theme.mainRightBadge.fontColor, theme.mainRightBadge.bgColor, rrect, TOP_RIGHT)
+        }
+
+        canvas.drawCard(rrect)
+
+        var top = quality.cardMargin + quality.badgeHeight.toFloat()
+        for (img in imgList) {
+            canvas.drawScaleWidthImage(img, cardRect.width, quality.cardMargin.toFloat(), top)
+
+            top += if (img.width > cardRect.width) {
+                (cardRect.width * img.height / img.width + quality.contentSpace).toInt()
+            } else {
+                img.height + quality.contentSpace
+            }
+        }
+
+        footerParagraph?.paint(canvas, cardRect.left, rrect.bottom + quality.cardMargin / 2)
+
+        with(session) {
+            surface.makeImageSnapshot().track()
+        }
+    } finally {
+        // 如果需要关闭输入的 Image 列表
+        if (closeInputImages) {
+            imgList.forEach { runCatching { it.close() } }
+        }
+    }
+}
+
+// Backward-compatible version for external callers (deprecated)
+@Deprecated("Use version with DrawingSession for better resource management")
 fun List<Image>.assembleCard(id: String, footer: String? = null, plusHeight: Int = 0, isForward: Boolean = false, tag: String? = null, closeInputImages: Boolean = false): Image {
     val imageConfig = BiliConfigManager.config.imageConfig
     val height = sumOf {
@@ -344,6 +467,8 @@ fun List<Image>.assembleCard(id: String, footer: String? = null, plusHeight: Int
             footerParagraph?.paint(canvas, cardRect.left, rrect.bottom + quality.cardMargin / 2)
         }
     } finally {
+        // 关闭 footerParagraph
+        footerParagraph?.close()
         // 如果需要关闭输入的 Image 列表
         if (closeInputImages) {
             imgList.forEach { runCatching { it.close() } }
@@ -351,6 +476,29 @@ fun List<Image>.assembleCard(id: String, footer: String? = null, plusHeight: Int
     }
 }
 
+suspend fun DynamicItem.Modules.makeGeneral(
+    session: DrawingSession,
+    time: String,
+    link: String,
+    type: DynamicType,
+    themeColor: Int,
+    isForward: Boolean = false,
+    isUnlocked: Boolean = false
+): List<Image> {
+    return mutableListOf<Image>().apply {
+        if (type != DYNAMIC_TYPE_NONE)
+            add(if (isForward) moduleAuthor.drawForward(time) else moduleAuthor.drawGeneral(time, link, themeColor))
+        if(isUnlocked){
+            add(drawBlockedDefault(session))
+        }else{
+            moduleDispute?.drawGeneral()?.let { add(it) }
+            addAll(moduleDynamic.makeGeneral(isForward))
+        }
+    }
+}
+
+// Backward-compatible version for external callers (deprecated)
+@Deprecated("Use version with DrawingSession for better resource management")
 suspend fun DynamicItem.Modules.makeGeneral(
     time: String,
     link: String,
@@ -371,6 +519,46 @@ suspend fun DynamicItem.Modules.makeGeneral(
     }
 }
 
+fun drawBlockedDefault(session: DrawingSession): Image {
+    val bgImg = with(session) {
+        Image.makeFromEncoded(loadResourceBytes("image/Blocked_BG_Day.png")).track()
+    }
+    val bgWidth = cardContentRect.width - 2 * quality.cardPadding
+    val bgHeight = bgImg.height.toFloat() / bgImg.width.toFloat() * bgWidth
+
+    val textStyle = ParagraphStyle().apply {
+        maxLinesCount = 2
+        ellipsis = "..."
+        alignment = Alignment.CENTER
+        textStyle = titleTextStyle.apply {
+            color = Color.WHITE
+        }
+    }
+    val text = with(session) {
+        ParagraphBuilder(textStyle, FontUtils.fonts)
+            .addText("此动态为专属动态\n请自行查看详情内容")
+            .build().layout(bgWidth).track()
+    }
+
+    val surface = session.createSurface(
+        cardContentRect.width.toInt(), (bgHeight + 3.0f * quality.cardPadding).toInt()
+    )
+    val canvas = surface.canvas
+
+    val x = quality.cardPadding.toFloat()
+    var y = quality.cardPadding.toFloat()
+    canvas.drawImageClip(bgImg, RRect.Companion.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
+
+    y += (bgHeight - text.height) / 2.0f
+    text.paint(canvas, x, y)
+
+    return with(session) {
+        surface.makeImageSnapshot().track()
+    }
+}
+
+// Backward-compatible version for external callers (deprecated)
+@Deprecated("Use version with DrawingSession for better resource management")
 fun drawBlockedDefault(): Image {
     val bgImg = Image.makeFromEncoded(loadResourceBytes("image/Blocked_BG_Day.png"))
     return try {
@@ -389,15 +577,19 @@ fun drawBlockedDefault(): Image {
             .addText("此动态为专属动态\n请自行查看详情内容")
             .build().layout(bgWidth)
 
-        createImage(
-            cardContentRect.width.toInt(), (bgHeight + 3 * quality.cardPadding).toInt()
-        ) { canvas ->
-            val x = quality.cardPadding.toFloat()
-            var y = quality.cardPadding.toFloat()
-            canvas.drawImageClip(bgImg, RRect.Companion.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
+        try {
+            createImage(
+                cardContentRect.width.toInt(), (bgHeight + 3 * quality.cardPadding).toInt()
+            ) { canvas ->
+                val x = quality.cardPadding.toFloat()
+                var y = quality.cardPadding.toFloat()
+                canvas.drawImageClip(bgImg, RRect.Companion.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
 
-            y += (bgHeight - text.height) / 2
-            text.paint(canvas, x, y)
+                y += (bgHeight - text.height) / 2
+                text.paint(canvas, x, y)
+            }
+        } finally {
+            text.close()
         }
     } finally {
         bgImg.close()
@@ -426,6 +618,27 @@ fun Canvas.drawCard(rrect: RRect, bgColor: Int = theme.cardBgColor) {
     })
 }
 
+fun makeCardBg(session: DrawingSession, height: Int, colors: List<Int>, block: (Canvas) -> Unit): Image {
+    val imageRect = Rect.makeXYWH(0f, 0f, quality.imageWidth.toFloat(), height.toFloat())
+    val surface = session.createSurface(imageRect.width.toInt(), height)
+    val canvas = surface.canvas
+
+    canvas.drawRect(imageRect, Paint().apply {
+        shader = Shader.makeLinearGradient(
+            Point(imageRect.left, imageRect.top),
+            Point(imageRect.right, imageRect.bottom),
+            generateLinearGradient(colors)
+        )
+    })
+    block(canvas)
+
+    return with(session) {
+        surface.makeImageSnapshot().track()
+    }
+}
+
+// Backward-compatible version for external callers (deprecated)
+@Deprecated("Use version with DrawingSession for better resource management")
 fun makeCardBg(height: Int, colors: List<Int>, block: (Canvas) -> Unit): Image {
     val imageRect = Rect.makeXYWH(0f, 0f, quality.imageWidth.toFloat(), height.toFloat())
     return createImage(imageRect.width.toInt(), height) { canvas ->
@@ -536,46 +749,50 @@ fun Canvas.drawBadge(
 
     val textLine = TextLine.make(text, font)
 
-    val badgeWidth = textLine.width + quality.badgePadding * 8 + (icon?.width ?: 0)
+    try {
+        val badgeWidth = textLine.width + quality.badgePadding * 8 + (icon?.width ?: 0)
 
-    val rrect = when (position) {
-        TOP_LEFT -> RRect.makeXYWH(
-            cardRect.left, cardRect.top - quality.badgeHeight, badgeWidth,
-            quality.badgeHeight.toFloat(), quality.badgeArc, quality.badgeArc, 0f, 0f
-        )
+        val rrect = when (position) {
+            TOP_LEFT -> RRect.makeXYWH(
+                cardRect.left, cardRect.top - quality.badgeHeight, badgeWidth,
+                quality.badgeHeight.toFloat(), quality.badgeArc, quality.badgeArc, 0f, 0f
+            )
 
-        TOP_RIGHT -> RRect.makeXYWH(
-            cardRect.right - badgeWidth, cardRect.top - quality.badgeHeight, badgeWidth,
-            quality.badgeHeight.toFloat(), quality.badgeArc, quality.badgeArc, 0f, 0f
-        )
+            TOP_RIGHT -> RRect.makeXYWH(
+                cardRect.right - badgeWidth, cardRect.top - quality.badgeHeight, badgeWidth,
+                quality.badgeHeight.toFloat(), quality.badgeArc, quality.badgeArc, 0f, 0f
+            )
 
-        BOTTOM_LEFT -> RRect.makeXYWH(
-            cardRect.left, cardRect.bottom + quality.badgeHeight, badgeWidth,
-            quality.badgeHeight.toFloat(), 0f, 0f, quality.badgeArc, quality.badgeArc
-        )
+            BOTTOM_LEFT -> RRect.makeXYWH(
+                cardRect.left, cardRect.bottom + quality.badgeHeight, badgeWidth,
+                quality.badgeHeight.toFloat(), 0f, 0f, quality.badgeArc, quality.badgeArc
+            )
 
-        BOTTOM_RIGHT -> RRect.makeXYWH(
-            cardRect.right - badgeWidth, cardRect.bottom + quality.badgeHeight, badgeWidth,
-            quality.badgeHeight.toFloat(), 0f, 0f, quality.badgeArc, quality.badgeArc
-        )
+            BOTTOM_RIGHT -> RRect.makeXYWH(
+                cardRect.right - badgeWidth, cardRect.bottom + quality.badgeHeight, badgeWidth,
+                quality.badgeHeight.toFloat(), 0f, 0f, quality.badgeArc, quality.badgeArc
+            )
+        }
+
+        drawRectShadowAntiAlias(rrect.inflate(1f), theme.smallCardShadow)
+
+        drawCard(rrect, bgColor)
+
+        var x = rrect.left + quality.badgePadding * 4
+        if (icon != null) {
+            x -= quality.badgePadding
+            drawImage(icon, x, rrect.top + (quality.badgeHeight - icon.height) / 2)
+            x += icon.width + quality.badgePadding * 2
+        }
+
+        drawTextLine(
+            textLine,
+            x,
+            rrect.bottom - (quality.badgeHeight - textLine.capHeight) / 2,
+            Paint().apply { color = fontColor })
+    } finally {
+        textLine.close()
     }
-
-    drawRectShadowAntiAlias(rrect.inflate(1f), theme.smallCardShadow)
-
-    drawCard(rrect, bgColor)
-
-    var x = rrect.left + quality.badgePadding * 4
-    if (icon != null) {
-        x -= quality.badgePadding
-        drawImage(icon, x, rrect.top + (quality.badgeHeight - icon.height) / 2)
-        x += icon.width + quality.badgePadding * 2
-    }
-
-    drawTextLine(
-        textLine,
-        x,
-        rrect.bottom - (quality.badgeHeight - textLine.capHeight) / 2,
-        Paint().apply { color = fontColor })
 
 }
 
