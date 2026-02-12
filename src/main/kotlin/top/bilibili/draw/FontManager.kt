@@ -69,7 +69,9 @@ object FontManager : AutoCloseable {
             if (_emojiFont == null) {
                 synchronized(this) {
                     if (_emojiFont == null) {
-                        _emojiFont = Font(emojiTypeface, quality.contentFontSize)
+                        // 如果 emoji typeface 为 null，使用 mainTypeface 作为后备
+                        val typeface = emojiTypeface ?: mainTypeface
+                        _emojiFont = Font(typeface, quality.contentFontSize)
                     }
                 }
             }
@@ -155,22 +157,24 @@ object FontManager : AutoCloseable {
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
-            logger.info("FontManager 正在关闭，释放所有字体资源...")
+            synchronized(this) {
+                logger.info("FontManager 正在关闭，释放所有字体资源...")
 
-            _font?.close()
-            _font = null
+                _font?.close()
+                _font = null
 
-            _emojiFont?.close()
-            _emojiFont = null
+                _emojiFont?.close()
+                _emojiFont = null
 
-            _fansCardFont?.close()
-            _fansCardFont = null
+                _fansCardFont?.close()
+                _fansCardFont = null
 
-            // Typeface 不需要手动关闭，由 JVM 管理
-            _mainTypeface = null
-            _emojiTypeface = null
+                // Typeface 不需要手动关闭，由 JVM 管理
+                _mainTypeface = null
+                _emojiTypeface = null
 
-            logger.info("FontManager 已关闭")
+                logger.info("FontManager 已关闭")
+            }
         }
     }
 }
