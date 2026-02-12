@@ -155,19 +155,52 @@ const val emojiCharacter =
 val emojiRegex = "${emojiCharacter}(?:\\u200D${emojiCharacter})*".toRegex()
 
 /**
- * 图片加载失败时的占位图
+ * 图片加载失败时的占位图字节数据（缓存）
+ * 使用字节数据而非 Image 对象，避免全局 Image 泄漏
  */
-val imageMiss: Image by lazy {
+private val imageMissBytes: ByteArray by lazy {
     try {
-        Image.makeFromEncoded(loadResourceBytes("image/IMAGE_MISS.png"))
+        loadResourceBytes("image/IMAGE_MISS.png")
     } catch (e: Exception) {
         logger.error("无法加载 IMAGE_MISS.png: ${e.message}")
+        // 返回空数组，后续会创建简单的粉色占位图
+        ByteArray(0)
+    }
+}
+
+/**
+ * 获取图片加载失败时的占位图（使用 DrawingSession 追踪）
+ * 推荐使用此版本，自动追踪和释放 Skia 资源
+ */
+fun getImageMiss(session: DrawingSession): Image {
+    return if (imageMissBytes.isNotEmpty()) {
+        with(session) {
+            Image.makeFromEncoded(imageMissBytes).track()
+        }
+    } else {
+        // 创建一个简单的粉色占位图
+        val surface = session.createSurface(400, 300)
+        surface.canvas.clear(Color.makeRGB(255, 192, 203))
+        with(session) {
+            surface.makeImageSnapshot().track()
+        }
+    }
+}
+
+/**
+ * 图片加载失败时的占位图（不追踪资源，调用方负责关闭）
+ * @deprecated 使用 getImageMiss(session) 替代
+ */
+@Deprecated("Use getImageMiss(session) for better resource management. This property creates a new Image each time.")
+val imageMiss: Image
+    get() = if (imageMissBytes.isNotEmpty()) {
+        Image.makeFromEncoded(imageMissBytes)
+    } else {
         // 创建一个简单的粉色占位图
         createImage(400, 300) { canvas ->
             canvas.clear(Color.makeRGB(255, 192, 203))
         }
     }
-}
 
 enum class Position {
     TOP_LEFT,
@@ -229,8 +262,23 @@ fun loadSVG(path: String): SVGDOM? {
 }
 
 /**
- * 渲染svg图片
+ * 渲染svg图片（使用 DrawingSession 追踪资源）
+ * 推荐使用此版本，自动追踪和释放 Skia 资源
  */
+fun SVGDOM.makeImage(session: DrawingSession, width: Float, height: Float): Image {
+    setContainerSize(width, height)
+    val surface = session.createSurface(width.toInt(), height.toInt())
+    render(surface.canvas)
+    return with(session) {
+        surface.makeImageSnapshot().track()
+    }
+}
+
+/**
+ * 渲染svg图片（不追踪资源，调用方负责关闭）
+ * @deprecated 使用 makeImage(session, width, height) 替代
+ */
+@Deprecated("Use makeImage(session, width, height) for better resource management")
 fun SVGDOM.makeImage(width: Float, height: Float): Image {
     setContainerSize(width, height)
     return createImage(width.toInt(), height.toInt()) { canvas -> render(canvas) }
@@ -273,6 +321,46 @@ fun RRect.offsetR(dx: Float, dy: Float): RRect {
     return RRect.makeComplexLTRB(left + dx, top + dy, right + dx, bottom + dy, radii)
 }
 
+fun Canvas.drawImageClip(
+    session: DrawingSession,
+    image: Image,
+    dstRect: RRect,
+    paint: Paint? = null
+) {
+    // 验证目标矩形的尺寸是否有效
+    if (dstRect.width <= 0 || dstRect.height <= 0 || dstRect.width.isNaN() || dstRect.height.isNaN()) {
+        logger.warn("目标矩形尺寸无效: width=${dstRect.width}, height=${dstRect.height}")
+        return
+    }
+
+    // 如果图片尺寸无效，使用占位图
+    val actualImage = if (image.width <= 0 || image.height <= 0) {
+        logger.warn("图片尺寸无效: width=${image.width}, height=${image.height}，使用占位图替代")
+        getImageMiss(session)
+    } else {
+        image
+    }
+
+    val ratio = actualImage.width.toFloat() / actualImage.height.toFloat()
+
+    val srcRect = if (dstRect.width / ratio < dstRect.height) {
+        val imgW = dstRect.width * actualImage.height / dstRect.height
+        val offsetX = (actualImage.width - imgW) / 2f
+        Rect.makeXYWH(offsetX, 0f, imgW, actualImage.height.toFloat())
+    } else {
+        val imgH = dstRect.height * actualImage.width / dstRect.width
+        val offsetY = (actualImage.height - imgH) / 2
+        Rect.makeXYWH(0f, offsetY, actualImage.width.toFloat(), imgH)
+    }
+
+    drawImageRRect(actualImage, srcRect, dstRect, paint)
+}
+
+/**
+ * 绘制裁剪图片（不使用 session，调用方负责资源管理）
+ * @deprecated 使用 drawImageClip(session, image, dstRect, paint) 替代
+ */
+@Deprecated("Use drawImageClip(session, image, dstRect, paint) for better resource management")
 fun Canvas.drawImageClip(
     image: Image,
     dstRect: RRect,

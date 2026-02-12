@@ -169,7 +169,7 @@ fun drawInfoText(text: String): Image {
 }
 
 suspend fun ModuleDynamic.Major.Opus.drawGeneral(session: DrawingSession): Image {
-    val desc = summary.drawGeneral()  // TODO: Update to session-based version when DynamicModuleDraw is migrated
+    val desc = summary.drawGeneral(session)
     val draw = if (pics.isNotEmpty()) {
         val imgs = pics.map {
             ModuleDynamic.Major.Draw.DrawItem(it.width, it.height, it.src)
@@ -209,9 +209,7 @@ suspend fun ModuleDynamic.Major.Opus.drawGeneral(session: DrawingSession): Image
         canvas.drawImage(draw, 0f, h.toFloat() + desc.height)
     }
 
-    // Close intermediate images manually since they're not tracked by session
-    desc.close()
-    draw?.close()
+    // desc 和 draw 已被 session 追踪，会在 session 关闭时自动释放
 
     return with(session) { surface.makeImageSnapshot().track() }
 }
@@ -1961,7 +1959,7 @@ suspend fun ModuleDynamic.Major.Draw.drawGeneral(session: DrawingSession): Image
             isAntiAlias = true
         })
 
-        canvas.drawImageClip(img, dstRect)
+        canvas.drawImageClip(session, img, dstRect)
 
         canvas.drawRRect(dstRect, Paint().apply {
             color = theme.drawOutlineColor
@@ -2119,10 +2117,10 @@ suspend fun ModuleDynamic.Major.Blocked.drawGeneral(session: DrawingSession): Im
 
     var x = quality.cardPadding.toFloat()
     var y = 0f
-    canvas.drawImageClip(bgImage, RRect.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
+    canvas.drawImageClip(session, bgImage, RRect.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
     x += (bgWidth - lockWidth) / 2
     y += bgHeight / 3
-    canvas.drawImageClip(lockIcon, RRect.makeXYWH(x, y, lockWidth, lockHeight, quality.cardArc))
+    canvas.drawImageClip(session, lockIcon, RRect.makeXYWH(x, y, lockWidth, lockHeight, quality.cardArc))
 
     x = quality.cardPadding.toFloat()
     y += lockHeight + quality.drawSpace
@@ -2250,7 +2248,7 @@ suspend fun ModuleDynamic.Major.Article.drawGeneral(session: DrawingSession): Im
             val fallbackUrl = imgApi(it, imgW.toInt(), articleCoverHeight.toInt())
             val img = getOrDownloadImageDefault(it, fallbackUrl, CacheType.IMAGES)
             val tar = RRect.makeXYWH(imgX, articleCardRect.top, imgW, articleCoverHeight, 0f)
-            canvas.drawImageClip(img, tar, Paint())
+            canvas.drawImageClip(session, img, tar, Paint())
             imgX += articleCardRect.width / 3 + 2
             img.close()
         }

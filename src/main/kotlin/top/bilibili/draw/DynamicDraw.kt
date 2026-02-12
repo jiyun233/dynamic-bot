@@ -488,7 +488,7 @@ fun drawBlockedDefault(session: DrawingSession): Image {
 
     val x = quality.cardPadding.toFloat()
     var y = quality.cardPadding.toFloat()
-    canvas.drawImageClip(bgImg, RRect.Companion.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
+    canvas.drawImageClip(session, bgImg, RRect.Companion.makeXYWH(x, y, bgWidth, bgHeight, quality.cardArc))
 
     y += (bgHeight - text.height) / 2.0f
     text.paint(canvas, x, y)
