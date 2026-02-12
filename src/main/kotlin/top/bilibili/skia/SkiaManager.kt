@@ -2,6 +2,7 @@ package top.bilibili.skia
 
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
+import top.bilibili.draw.FontManager
 import top.bilibili.utils.ImageCache
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -128,6 +129,15 @@ object SkiaManager {
     suspend fun shutdown() {
         logger.info("关闭 SkiaManager...")
         performCleanup()
+
+        // 关闭 FontManager
+        try {
+            FontManager.close()
+            logger.info("FontManager 已关闭")
+        } catch (e: Exception) {
+            logger.error("关闭 FontManager 时出错: ${e.message}", e)
+        }
+
         scope.cancel()
     }
 }
