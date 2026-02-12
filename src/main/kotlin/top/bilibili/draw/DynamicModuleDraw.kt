@@ -11,6 +11,7 @@ import top.bilibili.data.ModuleAuthor
 import top.bilibili.data.ModuleDispute
 import top.bilibili.data.ModuleDynamic
 import top.bilibili.skia.DrawingSession
+import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.CacheType
 import top.bilibili.utils.FontUtils
 import top.bilibili.utils.formatTime
@@ -931,7 +932,7 @@ suspend fun ModuleAuthor.drawForward(session: DrawingSession, time: String): Ima
     val canvas = surface.canvas
 
     val faceSize = quality.faceSize * 0.6f
-    canvas.drawAvatar(authorFace, "", authorVerify, faceSize, quality.verifyIconSize * 0.8f, true)
+    canvas.drawAvatar(session, authorFace, "", authorVerify, faceSize, quality.verifyIconSize * 0.8f, true)
 
     val nameFont = with(session) { font.makeWithSize(quality.nameFontSize).track() }
     val timeFont = with(session) { font.makeWithSize(quality.subTitleFontSize).track() }
@@ -955,12 +956,15 @@ suspend fun ModuleAuthor.drawForward(time: String): Image {
     val authorFace = face
     val authorName = name
     val authorVerify = officialVerify?.type
-    return createImage(
-        quality.imageWidth - quality.cardMargin * 2,
-        (quality.faceSize + quality.cardPadding).toInt()
-    ) { canvas ->
+    return SkiaManager.executeDrawing {
+        val surface = createSurface(
+            quality.imageWidth - quality.cardMargin * 2,
+            (quality.faceSize + quality.cardPadding).toInt()
+        )
+        val canvas = surface.canvas
+
         val faceSize = quality.faceSize * 0.6f
-        canvas.drawAvatar(authorFace, "", authorVerify, faceSize, quality.verifyIconSize * 0.8f, true)
+        canvas.drawAvatar(this, authorFace, "", authorVerify, faceSize, quality.verifyIconSize * 0.8f, true)
 
         val nameFont = font.makeWithSize(quality.nameFontSize)
         val timeFont = font.makeWithSize(quality.subTitleFontSize)
@@ -982,6 +986,8 @@ suspend fun ModuleAuthor.drawForward(time: String): Image {
             nameFont.close()
             timeFont.close()
         }
+
+        surface.makeImageSnapshot()
     }
 }
 
@@ -998,7 +1004,7 @@ suspend fun ModuleAuthor.drawGeneral(session: DrawingSession, time: String, link
     )
     val canvas = surface.canvas
 
-    canvas.drawAvatar(authorFace, authorPendant, authorVerify, quality.faceSize, quality.verifyIconSize)
+    canvas.drawAvatar(session, authorFace, authorPendant, authorVerify, quality.faceSize, quality.verifyIconSize)
 
     val nameFont = with(session) { font.makeWithSize(quality.nameFontSize).track() }
     val timeFont = with(session) { font.makeWithSize(quality.subTitleFontSize).track() }
@@ -1042,11 +1048,14 @@ suspend fun ModuleAuthor.drawGeneral(time: String, link: String, themeColor: Int
     val authorVerify = officialVerify?.type
     val authorDecorate = decorate
     val authorIconBadge = iconBadge
-    return createImage(
-        quality.imageWidth - quality.cardMargin * 2,
-        quality.pendantSize.toInt()
-    ) { canvas ->
-        canvas.drawAvatar(authorFace, authorPendant, authorVerify, quality.faceSize, quality.verifyIconSize)
+    return SkiaManager.executeDrawing {
+        val surface = createSurface(
+            quality.imageWidth - quality.cardMargin * 2,
+            quality.pendantSize.toInt()
+        )
+        val canvas = surface.canvas
+
+        canvas.drawAvatar(this, authorFace, authorPendant, authorVerify, quality.faceSize, quality.verifyIconSize)
 
         val nameFont = font.makeWithSize(quality.nameFontSize)
         val timeFont = font.makeWithSize(quality.subTitleFontSize)
@@ -1085,6 +1094,8 @@ suspend fun ModuleAuthor.drawGeneral(time: String, link: String, themeColor: Int
         }
 
         canvas.drawOrnament(authorDecorate, link, themeColor)
+
+        surface.makeImageSnapshot()
     }
 }
 

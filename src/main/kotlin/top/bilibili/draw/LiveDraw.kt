@@ -207,7 +207,7 @@ suspend fun LiveInfo.drawAvatar(session: DrawingSession): Image {
     val canvas = surface.canvas
 
     // Note: drawAvatar() uses internal try-finally for resource management
-    canvas.drawAvatar(liveFace, null, null, quality.faceSize, quality.verifyIconSize)
+    canvas.drawAvatar(session, liveFace, null, null, quality.faceSize, quality.verifyIconSize)
 
     val paragraphStyle = ParagraphStyle().apply {
         maxLinesCount = 1
@@ -266,11 +266,14 @@ suspend fun LiveInfo.drawAvatar(): Image {
     val liveUid = uid
     val liveRoomId = roomId
     val liveArea = area
-    return createImage(
-        cardRect.width.toInt(),
-        (quality.faceSize + quality.cardPadding * 2f).toInt()
-    ) { canvas ->
-        canvas.drawAvatar(liveFace, null, null, quality.faceSize, quality.verifyIconSize)
+    return SkiaManager.executeDrawing {
+        val surface = createSurface(
+            cardRect.width.toInt(),
+            (quality.faceSize + quality.cardPadding * 2f).toInt()
+        )
+        val canvas = surface.canvas
+
+        canvas.drawAvatar(this, liveFace, null, null, quality.faceSize, quality.verifyIconSize)
 
         val paragraphStyle = ParagraphStyle().apply {
             maxLinesCount = 1
@@ -313,6 +316,8 @@ suspend fun LiveInfo.drawAvatar(): Image {
         val color = BiliConfigManager.data.dynamic[liveUid]?.color ?: BiliConfigManager.config.imageConfig.defaultColor
         val colors = color.split(";", "；").map { Color.makeRGB(it.trim()) }.first()
         canvas.drawLiveOrnament("https://live.bilibili.com/$liveRoomId", colors, liveArea)
+
+        surface.makeImageSnapshot()
     }
 }
 

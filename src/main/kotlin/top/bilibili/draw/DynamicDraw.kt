@@ -593,6 +593,7 @@ fun makeCardBg(height: Int, colors: List<Int>, block: (Canvas) -> Unit): Image {
 }
 
 suspend fun Canvas.drawAvatar(
+    session: DrawingSession,
     face: String,
     pendant: String?,
     verifyType: Int?,
@@ -662,16 +663,12 @@ suspend fun Canvas.drawAvatar(
         val svg = loadSVG("icon/$verifyIcon.svg")
         if (svg != null) {
             val size = if (hasPendant) verifyIconSize - quality.noPendantFaceInflate / 2 else verifyIconSize
-            val verifyImg = svg.makeImage(size, size)
-            try {
-                drawImage(
-                    verifyImg,
-                    tarFaceRect.right - size,
-                    tarFaceRect.bottom - size
-                )
-            } finally {
-                verifyImg.close()
-            }
+            val verifyImg = svg.makeImage(session, size, size)
+            drawImage(
+                verifyImg,
+                tarFaceRect.right - size,
+                tarFaceRect.bottom - size
+            )
         }
     }
 }
