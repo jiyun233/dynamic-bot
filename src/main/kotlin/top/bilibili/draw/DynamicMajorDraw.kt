@@ -13,6 +13,70 @@ import kotlin.math.ceil
 
 
 private fun formatPgcEvaluateText(
+    session: DrawingSession,
+    rawText: String,
+    textAreaWidth: Float,
+    fontSize: Float
+): String {
+    val normalizedText = rawText.replace("\r\n", "\n")
+    val sizedFont = session.createFont(font.typeface!!, fontSize)
+
+    fun textWidth(s: String): Float = useTextLine(s, sizedFont) { it.width }
+
+    fun wrapByWidth(text: String): List<String> {
+        val result = mutableListOf<String>()
+        var index = 0
+        while (index < text.length) {
+            if (text[index] == '\n') {
+                result.add("")
+                index++
+                continue
+            }
+
+            val nextNewline = text.indexOf('\n', index).let { if (it == -1) text.length else it }
+            val available = nextNewline - index
+            if (available <= 0) {
+                index = nextNewline + 1
+                continue
+            }
+
+            var low = 1
+            var high = available
+            var best = 1
+
+            while (low <= high) {
+                val mid = (low + high) ushr 1
+                val candidate = text.substring(index, index + mid)
+                if (textWidth(candidate) <= textAreaWidth) {
+                    best = mid
+                    low = mid + 1
+                } else {
+                    high = mid - 1
+                }
+            }
+
+            result.add(text.substring(index, index + best))
+            index += best
+
+            if (index == nextNewline && index < text.length && text[index] == '\n') {
+                index++
+            }
+        }
+        return result
+    }
+
+    val lines = wrapByWidth(normalizedText)
+
+    if (lines.size < 5) return lines.joinToString("\n")
+
+    val firstSix = lines.take(5).toMutableList()
+    val sixthLine = firstSix[4]
+    firstSix[4] = if (sixthLine.length >= 15) sixthLine.substring(0, 14) + "…" else sixthLine
+    return firstSix.joinToString("\n")
+}
+
+@Deprecated("Use version with DrawingSession for better resource management")
+private fun formatPgcEvaluateText(
     rawText: String,
     textAreaWidth: Float,
     fontSize: Float
@@ -972,7 +1036,7 @@ suspend fun drawPgcCard(
         fontSize = quality.subTitleFontSize * 0.85f
     }
     val evaluateTextForRender = if (evaluateText.isNotEmpty()) {
-        formatPgcEvaluateText(evaluateText, textAreaWidth, evaluateTextStyle.fontSize)
+        formatPgcEvaluateText(session, evaluateText, textAreaWidth, evaluateTextStyle.fontSize)
     } else {
         ""
     }
