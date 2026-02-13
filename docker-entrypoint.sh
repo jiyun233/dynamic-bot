@@ -29,13 +29,11 @@ log_error() {
 # ============================================
 # jemalloc 已通过 LD_PRELOAD 和 MALLOC_CONF 在 Dockerfile 中配置
 # 不需要额外设置 MALLOC_* 环境变量
-log "Memory allocator: jemalloc (configured via LD_PRELOAD)"
 
 # ============================================
 # 1. 启动 Xvfb (虚拟显示服务器)
 # ============================================
-log "Starting Xvfb..."
-Xvfb "${XVFB_DISPLAY}" -screen 0 "${XVFB_SCREEN_SIZE}" -ac +extension GLX +render -noreset &
+Xvfb "${XVFB_DISPLAY}" -screen 0 "${XVFB_SCREEN_SIZE}" -ac +extension GLX +render -noreset 2>/dev/null &
 XVFB_PID=$!
 
 sleep 2
@@ -44,8 +42,6 @@ if ! kill -0 "$XVFB_PID" 2>/dev/null; then
     log_error "Xvfb failed to start"
     exit 1
 fi
-
-log "Xvfb started (PID: $XVFB_PID, DISPLAY: ${DISPLAY})"
 
 # ============================================
 # 2. 构建 Java 启动参数
@@ -61,8 +57,6 @@ fi
 
 JAVA_OPTS="$JAVA_OPTS -Dfile.encoding=UTF-8"
 JAVA_OPTS="$JAVA_OPTS -Duser.timezone=Asia/Shanghai"
-
-log "Java options: $JAVA_OPTS"
 
 # ============================================
 # 3. 信号处理
@@ -95,8 +89,6 @@ log "Starting dynamic-bot..."
 # shellcheck disable=SC2086
 java $JAVA_OPTS -jar /app/dynamic-bot.jar &
 JAVA_PID=$!
-
-log "Java started (PID: $JAVA_PID)"
 
 wait "$JAVA_PID"
 EXIT_CODE=$?

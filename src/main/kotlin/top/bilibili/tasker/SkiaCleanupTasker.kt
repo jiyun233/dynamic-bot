@@ -16,7 +16,7 @@ object SkiaCleanupTasker : BiliTasker() {
         // 1. 检查是否空闲超时并执行清理
         try {
             if (DrawingQueueManager.isIdleTimeout()) {
-                logger.info("Skia 空闲超时，执行清理")
+                logger.debug("Skia 空闲超时，执行清理")
                 SkiaManager.performCleanup()
             }
         } catch (e: Exception) {

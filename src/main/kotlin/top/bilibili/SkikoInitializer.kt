@@ -37,10 +37,5 @@ object SkikoInitializer {
 
         // 设置 AWT 为非 headless 模式 (Skiko 需要图形环境)
         System.setProperty("java.awt.headless", "false")
-
-        println("[SkikoInitializer] Skiko 配置已初始化:")
-        println("  - skiko.renderApi: SOFTWARE")
-        println("  - skiko.hardwareAcceleration: false")
-        println("  - java.awt.headless: false")
     }
 }

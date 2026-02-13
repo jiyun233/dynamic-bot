@@ -62,7 +62,7 @@ object SkiaManager {
      */
     suspend fun performCleanup() {
         totalCleanupCount.incrementAndGet()
-        logger.info("开始执行 Skia 清理...")
+        logger.debug("开始执行 Skia 清理...")
 
         // 1. 等待活动任务完成（带超时）
         runCatching {
@@ -83,7 +83,7 @@ object SkiaManager {
             delay(100)
         }
 
-        logger.info("Skia 清理完成")
+        logger.debug("Skia 清理完成")
     }
 
     /**

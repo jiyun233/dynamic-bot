@@ -237,7 +237,7 @@ object ImageCache : Closeable {
 
             // 获取清理前的统计
             val beforeStats = getCacheStats()
-            logger.info("开始清理图片缓存，当前: ${beforeStats.fileCount} 个文件，${beforeStats.totalSizeMB} MB")
+            logger.debug("开始清理图片缓存，当前: ${beforeStats.fileCount} 个文件，${beforeStats.totalSizeMB} MB")
 
             cacheDir.listFiles()?.forEach { file ->
                 val fileAge = now - file.lastModified() / 1000
@@ -256,9 +256,9 @@ object ImageCache : Closeable {
 
             if (cleanedCount > 0) {
                 logger.info("清理了 $cleanedCount 个过期图片缓存，释放 ${freedSpace / 1024 / 1024} MB 空间")
-                logger.info("清理后: ${afterStats.fileCount} 个文件，${afterStats.totalSizeMB} MB")
+                logger.debug("清理后: ${afterStats.fileCount} 个文件，${afterStats.totalSizeMB} MB")
             } else {
-                logger.info("没有需要清理的过期图片缓存 (${beforeStats.fileCount} 个文件在保留期内)")
+                logger.debug("没有需要清理的过期图片缓存 (${beforeStats.fileCount} 个文件在保留期内)")
             }
         } catch (e: Exception) {
             logger.error("清理图片缓存失败: ${e.message}", e)
@@ -312,7 +312,7 @@ object ImageCache : Closeable {
      */
     fun cleanCache() {
         try {
-            logger.info("开始执行图片缓存清理...")
+            logger.debug("开始执行图片缓存清理...")
 
             // 先清理 7 天前的文件
             cleanExpiredCache()
@@ -322,7 +322,7 @@ object ImageCache : Closeable {
 
             // 输出最终统计
             val finalStats = getCacheStats()
-            logger.info("缓存清理完成，最终状态: ${finalStats.fileCount} 个文件，${finalStats.totalSizeMB} MB")
+            logger.debug("缓存清理完成，最终状态: ${finalStats.fileCount} 个文件，${finalStats.totalSizeMB} MB")
         } catch (e: Exception) {
             logger.error("组合清理缓存失败: ${e.message}", e)
         }
