@@ -7,6 +7,7 @@ import top.bilibili.utils.ImageCache
 import java.io.File
 import java.io.FileWriter
 import java.io.PrintWriter
+import java.lang.management.ManagementFactory
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -44,6 +45,11 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private const val WARNING_THRESHOLD = 0.7   // 70%
     private const val CRITICAL_THRESHOLD = 0.85  // 85%
 
+    // Metaspace/CodeCache 阈值 (基于配置的限制)
+    private const val METASPACE_LIMIT_MB = 48L
+    private const val CODECACHE_LIMIT_MB = 48L
+    private const val NON_HEAP_WARNING_THRESHOLD = 0.8  // 80%
+
     // 连接状态追踪
     private var lastConnectionStatus = true
     private var disconnectedDuration = 0
@@ -67,6 +73,9 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
 
         // 2. 检查内存使用
         checkMemoryUsage(report)
+
+        // 2.5 检查非堆内存 (Metaspace, CodeCache)
+        checkNonHeapMemory(report)
 
         // 3. 检查连接状态
         checkConnectionStatus(report)
@@ -141,6 +150,47 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 report.hasMemoryIssue = false
                 logger.debug("内存使用正常 ($usagePercent%)")
             }
+        }
+    }
+
+    /**
+     * 检查非堆内存 (Metaspace, CodeCache)
+     * 这些区域不受 GC 管理，需要单独监控
+     */
+    private fun checkNonHeapMemory(report: MonitorReport) {
+        val memoryPools = ManagementFactory.getMemoryPoolMXBeans()
+
+        for (pool in memoryPools) {
+            val usage = pool.usage ?: continue
+            val usedMB = usage.used / 1024 / 1024
+
+            when {
+                pool.name.contains("Metaspace", ignoreCase = true) -> {
+                    report.metaspaceUsedMB = usedMB
+                    val ratio = usedMB.toDouble() / METASPACE_LIMIT_MB
+                    if (ratio > NON_HEAP_WARNING_THRESHOLD) {
+                        report.hasNonHeapIssue = true
+                        report.nonHeapIssueDetails.add("Metaspace: ${usedMB}MB / ${METASPACE_LIMIT_MB}MB (${(ratio * 100).toInt()}%)")
+                        logger.warn("Metaspace 使用率过高: ${usedMB}MB / ${METASPACE_LIMIT_MB}MB")
+                    }
+                }
+                pool.name.contains("CodeCache", ignoreCase = true) ||
+                pool.name.contains("CodeHeap", ignoreCase = true) -> {
+                    report.codeCacheUsedMB += usedMB
+                }
+            }
+        }
+
+        // 检查 CodeCache 总量
+        val codeCacheRatio = report.codeCacheUsedMB.toDouble() / CODECACHE_LIMIT_MB
+        if (codeCacheRatio > NON_HEAP_WARNING_THRESHOLD) {
+            report.hasNonHeapIssue = true
+            report.nonHeapIssueDetails.add("CodeCache: ${report.codeCacheUsedMB}MB / ${CODECACHE_LIMIT_MB}MB (${(codeCacheRatio * 100).toInt()}%)")
+            logger.warn("CodeCache 使用率过高: ${report.codeCacheUsedMB}MB / ${CODECACHE_LIMIT_MB}MB")
+        }
+
+        if (!report.hasNonHeapIssue) {
+            logger.debug("非堆内存正常 - Metaspace: ${report.metaspaceUsedMB}MB, CodeCache: ${report.codeCacheUsedMB}MB")
         }
     }
 
@@ -340,6 +390,7 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
     private fun writeMonitorLog(report: MonitorReport) {
         val hasAnyIssue = report.hasTaskerIssue ||
                 report.hasMemoryIssue ||
+                report.hasNonHeapIssue ||
                 report.hasConnectionIssue ||
                 report.hasZombieTaskers ||
                 report.hasBackpressure  // ✅ P3修复: 添加背压检测
@@ -379,6 +430,15 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
                 writer.println("  Top 5 内存占用:")
                 report.topMemoryConsumers.forEachIndexed { index, consumer ->
                     writer.println("    ${index + 1}. ${consumer.name}: ${consumer.estimatedMB}MB (${consumer.description})")
+                }
+
+                // 2.5 非堆内存 (Metaspace, CodeCache)
+                writer.println("[非堆内存] Metaspace: ${report.metaspaceUsedMB}MB/${METASPACE_LIMIT_MB}MB, CodeCache: ${report.codeCacheUsedMB}MB/${CODECACHE_LIMIT_MB}MB")
+                if (report.hasNonHeapIssue) {
+                    writer.println("  告警:")
+                    report.nonHeapIssueDetails.forEach { detail ->
+                        writer.println("    - $detail")
+                    }
                 }
 
                 // 3. 连接状态（只在异常时写入）
@@ -459,6 +519,12 @@ object ProcessGuardian : BiliTasker("ProcessGuardian") {
         var memoryMaxMB: Long = 0,
         var memoryUsagePercent: Int = 0,
         var topMemoryConsumers: List<MemoryConsumer> = emptyList(),
+
+        // 非堆内存 (Metaspace, CodeCache)
+        var hasNonHeapIssue: Boolean = false,
+        var metaspaceUsedMB: Long = 0,
+        var codeCacheUsedMB: Long = 0,
+        var nonHeapIssueDetails: MutableList<String> = mutableListOf(),
 
         // 连接状态
         var hasConnectionIssue: Boolean = false,
