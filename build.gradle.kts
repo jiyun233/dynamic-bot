@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "top.bilibili"
-version = "1.5.4"
+version = "1.6"
 
 repositories {
     mavenLocal()
@@ -62,8 +62,9 @@ dependencies {
     implementation("com.google.zxing:javase:3.5.0")
 
     // Skiko 图片绘制 (Linux x64, Windows x64)
-    implementation("org.jetbrains.skiko:skiko-awt-runtime-windows-x64:0.7.27")
-    implementation("org.jetbrains.skiko:skiko-awt-runtime-linux-x64:0.7.27")
+    // 使用 0.8.15 版本
+    implementation("org.jetbrains.skiko:skiko-awt-runtime-windows-x64:0.8.15")
+    implementation("org.jetbrains.skiko:skiko-awt-runtime-linux-x64:0.8.15")
 
     // 日志系统
     implementation("ch.qos.logback:logback-classic:1.4.14")
@@ -140,16 +141,31 @@ tasks.register("createStartScripts") {
         // Windows 启动脚本
         file("scripts/start.bat").writeText("""
             @echo off
+            chcp 65001 >nul
             cd /d "%~dp0.."
-            java -Xms512m -Xmx2g -jar lib\dynamic-bot-${version}.jar
+
+            set JAVA_OPTS=-Xms512m -Xmx2g
+            set JAVA_OPTS=%JAVA_OPTS% -Dfile.encoding=UTF-8
+            set JAVA_OPTS=%JAVA_OPTS% -Duser.timezone=Asia/Shanghai
+            set JAVA_OPTS=%JAVA_OPTS% -Dskiko.renderApi=SOFTWARE
+            set JAVA_OPTS=%JAVA_OPTS% -Dskiko.hardwareAcceleration=false
+
+            java %JAVA_OPTS% -jar lib\dynamic-bot-${version}.jar
             pause
         """.trimIndent())
 
         // Linux 启动脚本
         file("scripts/start.sh").writeText("""
             #!/bin/bash
-            cd "$(dirname "$0")/.."
-            java -Xms512m -Xmx2g -jar lib/dynamic-bot-${version}.jar
+            cd "${'$'}(dirname "${'$'}0")/.."
+
+            JAVA_OPTS="-Xms512m -Xmx2g"
+            JAVA_OPTS="${'$'}JAVA_OPTS -Dfile.encoding=UTF-8"
+            JAVA_OPTS="${'$'}JAVA_OPTS -Duser.timezone=Asia/Shanghai"
+            JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.renderApi=SOFTWARE"
+            JAVA_OPTS="${'$'}JAVA_OPTS -Dskiko.hardwareAcceleration=false"
+
+            java ${'$'}JAVA_OPTS -jar lib/dynamic-bot-${version}.jar
         """.trimIndent())
 
         // 设置 Linux 脚本可执行权限

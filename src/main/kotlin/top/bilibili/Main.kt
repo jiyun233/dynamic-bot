@@ -10,6 +10,9 @@ private val logger = LoggerFactory.getLogger("Main")
  * 程序主入口
  */
 fun main(args: Array<String>) {
+    // ⚠️ 必须在任何 Skiko 类加载之前初始化
+    SkikoInitializer.initialize()
+
     try {
         // 解析命令行参数
         var enableDebug: Boolean? = null

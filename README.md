@@ -1,4 +1,4 @@
-# BiliBili 动态推送 Bot v1.5.4
+# BiliBili 动态推送 Bot v1.6
 
 [![Docker Hub](https://img.shields.io/docker/v/menghuanan/dynamic-bot?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/menghuanan/dynamic-bot)
 [![Docker Pulls](https://img.shields.io/docker/pulls/menghuanan/dynamic-bot)](https://hub.docker.com/r/menghuanan/dynamic-bot)
@@ -402,7 +402,8 @@ docker logs -f dynamic-bot
 
 #### 可用标签
 
-- `latest` - 最新版本（v1.5）
+- `latest` - 最新版本（v1.6）
+- `v1.6` - 稳定版本 v1.6
 - `v1.5` - 稳定版本 v1.5
 - `v1.4` - 稳定版本 v1.4
 - `v1.3.1` - 稳定版本 v1.3.1
@@ -502,6 +503,92 @@ Windows 用户可使用自动化脚本简化操作：
    - 文档和示例配置
 
 ## 更新日志
+
+### v1.6 (2026-02-13)
+
+**Skia 资源管理系统重构** 🎨
+
+本版本对 Skia 图形渲染资源管理进行了全面重构，解决了 Docker 环境下的内存持续增长问题。
+
+- ✅ **新增统一资源管理架构**
+  - `SkiaManager` - 统一绘图入口，通过 `executeDrawing { session -> }` 模式确保资源自动释放
+  - `DrawingSession` - 会话级资源追踪，`.track()` 方法自动注册资源，会话结束时批量释放
+  - `DrawingQueueManager` - 并发控制（最大2并发，队列容量20，60秒超时）
+  - `SkiaCleanupTasker` - 定时清理（60秒空闲检查）
+  - `FontManager` - 全局字体生命周期管理，单例模式避免重复加载
+
+- ✅ **三层控制架构**
+  - 第一层：SkiaManager 统一入口控制
+  - 第二层：DrawingQueueManager 并发与超时控制
+  - 第三层：DrawingSession 资源追踪与自动释放
+
+- ✅ **三道防线保障资源释放**
+  - 第一道：DrawingSession.use{} 自动关闭
+  - 第二道：SkiaCleanupTasker 定时清理
+  - 第三道：内存监控告警
+
+- ✅ **代码清理**
+  - 删除所有废弃函数，清理约 2500 行冗余代码
+  - 涉及文件：DynamicDraw、DynamicMajorDraw、DynamicModuleDraw、LiveDraw、QrCodeDraw、General
+
+**Docker 内存优化** 🐳
+
+针对 Docker 环境下 glibc malloc arena 碎片化导致的内存不归还问题，采用 jemalloc 方案彻底解决。
+
+- ✅ **jemalloc 内存分配器**
+  - 替换 glibc malloc，通过 LD_PRELOAD 注入
+  - 配置 5 秒 decay 时间，主动归还内存
+  - 单 arena 模式减少碎片化
+
+- ✅ **JVM 内存限制（基于 NMT 实测数据）**
+  - 堆内存：64MB-192MB (G1GC)
+  - Metaspace：48MB
+  - CodeCache：48MB
+  - DirectBuffer：64MB
+  - 理论最大值：~458MB
+
+- ✅ **Netty 内存优化**
+  - 使用 unpooled 分配器
+  - 禁用线程缓存
+  - 5 秒缓存清理间隔
+
+- ✅ **优化效果**
+  - 单次解析内存增长：20-25MB → <5MB
+  - 内存归还：不归还 → 5秒后归还
+  - 目标内存占用：300-400MB 稳定收敛
+
+**Skiko 崩溃修复** 🔧
+
+修复 Docker 环境下 Skiko 图形库 EXCEPTION_ACCESS_VIOLATION 崩溃问题。
+
+- ✅ **SOFTWARE 渲染模式**
+  - 通过 JVM 参数强制使用软件渲染
+  - 避免 GPU 驱动兼容性问题
+
+- ✅ **Xvfb 虚拟显示**
+  - 配置虚拟 X11 显示服务器
+  - 支持 1920x1080x24 分辨率
+
+- ✅ **系统依赖完善**
+  - 添加完整的图形库依赖（libgl1-mesa-glx、libx11-6 等）
+  - 确保 Skiko 在无头环境正常运行
+
+**Docker 部署改进** 📦
+
+- ✅ **Dockerfile 优化**
+  - 基于 eclipse-temurin:17-jre-jammy
+  - 集成 jemalloc 和严格 JVM 内存限制
+  - 完整的 Skiko 渲染参数配置
+
+- ✅ **docker-compose.yml 更新**
+  - 资源限制：512MB 硬限制，256MB 保证
+  - 共享内存：256MB（Xvfb 需要）
+  - 日志配置：100MB × 5 文件轮转
+
+- ✅ **docker-entrypoint.sh 改进**
+  - 正确的信号处理（SIGTERM/SIGINT）
+  - Xvfb 启动与健康检查
+  - 优雅关闭流程
 
 ### v1.5.4 (2026-02-11)
 

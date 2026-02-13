@@ -149,3 +149,5 @@ src/test/resources/output/**
 # Exclude docs markdown files, keep only images
 docs/*.md
 docs/plans/
+docs/1/
+docs/skia资源管理计划/

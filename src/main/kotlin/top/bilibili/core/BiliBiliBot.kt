@@ -321,12 +321,22 @@ object BiliBiliBot : CoroutineScope {
                 logger.error("关闭 BiliClient 失败: ${e.message}", e)
             }
 
-            // 7. 保存配置和数据
+            // 7. 关闭 SkiaManager
+            try {
+                runBlocking {
+                    top.bilibili.skia.SkiaManager.shutdown()
+                }
+                logger.info("SkiaManager 已关闭")
+            } catch (e: Exception) {
+                logger.error("关闭 SkiaManager 失败: ${e.message}", e)
+            }
+
+            // 8. 保存配置和数据
             if (::config.isInitialized) {
                 BiliConfigManager.saveAll()
             }
 
-            // 8. ✅ 等待协程完成（带超时）
+            // 9. 等待协程完成（带超时）
             runBlocking {
                 try {
                     withTimeout(10000) { // 10 秒超时

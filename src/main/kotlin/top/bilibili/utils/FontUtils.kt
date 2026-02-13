@@ -28,7 +28,7 @@ object FontUtils {
     }
 
     fun loadTypeface(path: String, alias: String? = null, index: Int = 0): Typeface {
-        val face = Typeface.makeFromFile(path, index)
+        val face = fontMgr.makeFromFile(path, index) ?: throw IllegalArgumentException("无法加载字体: $path")
         if (defaultFont == null) defaultFont = face
         registerTypeface(face, alias)
         logger.info("加载字体 ${face.familyName} 成功")
@@ -44,7 +44,7 @@ object FontUtils {
             if (inputStream != null) {
                 val bytes = inputStream.use { it.readBytes() }
                 val data = Data.makeFromBytes(bytes)
-                val face = Typeface.makeFromData(data, index)
+                val face = fontMgr.makeFromData(data, index) ?: throw IllegalArgumentException("无法从数据加载字体")
                 if (defaultFont == null) defaultFont = face
                 registerTypeface(face, alias)
                 logger.info("从 resources 加载字体 ${face.familyName} 成功")
@@ -60,7 +60,7 @@ object FontUtils {
     }
 
     fun loadTypeface(data: Data, index: Int = 0): Typeface {
-        val face = Typeface.makeFromData(data, index)
+        val face = fontMgr.makeFromData(data, index) ?: throw IllegalArgumentException("无法从数据加载字体")
         registerTypeface(face)
         return face
     }

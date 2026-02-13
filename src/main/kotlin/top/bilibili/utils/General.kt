@@ -264,7 +264,12 @@ fun Path.findFile(file: String): Path? {
  */
 fun cacheImage(image: Image, path: String, cacheType: CacheType): String {
     val file = cacheType.cacheFile(path)
-    file.writeBytes(image.encodeToData()!!.bytes)
+    val data = image.encodeToData()!!
+    try {
+        file.writeBytes(data.bytes)
+    } finally {
+        data.close()
+    }
     return file.toFile().absolutePath
 }
 

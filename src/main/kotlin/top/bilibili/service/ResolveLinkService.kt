@@ -7,7 +7,6 @@ import top.bilibili.data.*
 import top.bilibili.draw.*
 import top.bilibili.skia.SkiaManager
 import top.bilibili.utils.*
-import java.time.Instant
 
 
 suspend fun matchingRegular(content: String): ResolvedLinkInfo? {
@@ -141,18 +140,34 @@ enum class LinkType(val regex: List<Regex>) {
             VideoLink -> {
                 biliClient.getVideoDetail(id)?.run {
                     val author = biliClient.userInfo(owner.mid)?.toDrawAuthorData() ?: toDrawAuthorData()
-                    val data = SkiaManager.executeDrawing {
-                        toDrawData().drawGeneral(this, true)
+                    val videoData = toDrawData()
+                    val colors = getDefaultColors()
+                    val footer = buildFooter(author.name, author.mid, id, pubdate.formatRelativeTime, "视频")
+
+                    SkiaManager.executeDrawing {
+                        val authorImg = author.drawGeneral(this, pubdate.formatRelativeTime, VIDEO_LINK(id), colors.first())
+                        val contentImg = videoData.drawGeneral(this, true)
+                        val imgList = listOf(authorImg, contentImg)
+                        val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)
+                        val img = makeCardBg(this, cimg.height, colors) { it.drawImage(cimg, 0f, 0f) }
+                        cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
                     }
-                    drawGeneral(id, "视频", pubdate.formatRelativeTime, author, data)
                 }
             }
             Article -> {
                 biliClient.getArticleDetail("cv$id")?.run {
-                    val data = SkiaManager.executeDrawing {
-                        toDrawData().drawGeneral(this)
+                    val articleData = toDrawData()
+                    val colors = getDefaultColors()
+                    val footer = buildFooter(author.name, author.mid, id, time.formatRelativeTime, "专栏")
+
+                    SkiaManager.executeDrawing {
+                        val authorImg = author.drawGeneral(this, time.formatRelativeTime, ARTICLE_LINK(id), colors.first())
+                        val contentImg = articleData.drawGeneral(this)
+                        val imgList = listOf(authorImg, contentImg)
+                        val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)
+                        val img = makeCardBg(this, cimg.height, colors) { it.drawImage(cimg, 0f, 0f) }
+                        cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
                     }
-                    drawGeneral(id, "专栏", time.formatRelativeTime, author, data)
                 }
             }
             Dynamic -> {
@@ -163,18 +178,15 @@ enum class LinkType(val regex: List<Regex>) {
                         val img = makeCardBg(this, dynamic.height, listOf(color)) {
                             it.drawImage(dynamic, 0f, 0f)
                         }
-                        // 关闭中间 Image，释放原生内存
                         cacheImage(img, "$idStr.png", CacheType.DRAW_SEARCH)
-                        // All resources automatically released when session closes
                     }
                 }
             }
             Live -> {
                 val room = biliClient.getLiveDetail(id) ?: return null
                 val author = biliClient.userInfo(room.uid)?.toDrawAuthorData() ?: return null
-                val data = SkiaManager.executeDrawing {
-                    room.toDrawData().drawGeneral(this)
-                }
+                val liveData = room.toDrawData()
+                val colors = getDefaultColors()
                 val area = if (room.parentAreaName != null && room.areaName != null) {
                     "${room.parentAreaName} · ${room.areaName}"
                 } else {
@@ -186,32 +198,53 @@ enum class LinkType(val regex: List<Regex>) {
                     2 -> "轮播中"
                     else -> "直播"
                 }
-                drawGeneral(id, liveStatusText, author.sign ?: "", author, data, area)
+                val footer = run {
+                    val footerTemplate = BiliConfigManager.config.templateConfig.footer.liveFooter
+                    if (footerTemplate.isNotBlank()) {
+                        footerTemplate
+                            .replace("{name}", author.name)
+                            .replace("{uid}", author.mid.toString())
+                            .replace("{id}", id)
+                            .replace("{time}", author.sign ?: "")
+                            .replace("{type}", liveStatusText)
+                            .replace("{area}", area)
+                    } else null
+                }
+
+                SkiaManager.executeDrawing {
+                    val authorImg = author.drawGeneral(this, author.sign ?: "", LIVE_LINK(id), colors.first())
+                    val contentImg = liveData.drawGeneral(this)
+                    val imgList = listOf(authorImg, contentImg)
+                    val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)
+                    val img = makeCardBg(this, cimg.height, colors) { it.drawImage(cimg, 0f, 0f) }
+                    cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
+                }
             }
             User -> {
                 val author = biliClient.userInfo(id.toLong())?.toDrawAuthorData() ?: return null
-                drawGeneral(id, "用户", author.sign ?: "", author, null)
+                val colors = getDefaultColors()
+                val footer = buildFooter(author.name, author.mid, id, author.sign ?: "", "用户")
+
+                SkiaManager.executeDrawing {
+                    val authorImg = author.drawGeneral(this, author.sign ?: "", SPACE_LINK(id), colors.first())
+                    val imgList = listOf(authorImg)
+                    val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)
+                    val img = makeCardBg(this, cimg.height, colors) { it.drawImage(cimg, 0f, 0f) }
+                    cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
+                }
             }
             Pgc -> {
                 val info = biliClient.getPcgInfo(id) ?: return null
-                val author = info.toPgcAuthor() ?: return null
-                val data = SkiaManager.executeDrawing {
-                    info.toPgc()?.drawSmall(this)
+                val pgcData = info.toPgc() ?: return null
+                val colors = getDefaultColors()
+
+                SkiaManager.executeDrawing {
+                    val contentImg = pgcData.drawSmall(this)
+                    val imgList = listOf(contentImg)
+                    val cimg = imgList.assembleCard(this, id, tag = "搜索", closeInputImages = true)
+                    val img = makeCardBg(this, cimg.height, colors) { it.drawImage(cimg, 0f, 0f) }
+                    cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
                 }
-                val typeName = when (info) {
-                    is PgcSeason -> when (info.type) {
-                        1 -> "番剧"
-                        2 -> "电影"
-                        3 -> "纪录片"
-                        4 -> "国创"
-                        5 -> "电视剧"
-                        7 -> "综艺"
-                        else -> "番剧"
-                    }
-                    is PgcMedia -> info.media.typeName
-                    else -> "番剧"
-                }
-                drawGeneral(id, typeName, Instant.now().epochSecond.formatRelativeTime, author, data)
             }
             ShortLink -> {
                 val link = biliClient.redirect("https://b23.tv/$id")
@@ -235,57 +268,9 @@ enum class LinkType(val regex: List<Regex>) {
     }
 }
 
-suspend fun drawGeneral(id: String, tag: String, time: String, author: ModuleAuthor, imgData: org.jetbrains.skia.Image?, area: String? = null): String {
-    val colors = BiliConfigManager.config.imageConfig.defaultColor.split(";", "；").map { Color.makeRGB(it.trim()) }
-
-    // PGC 内容（番剧、电影等）不显示作者头像部分，且直接返回不加外框
-    val isPgcContent = tag in listOf("番剧", "电影", "纪录片", "国创", "电视剧", "综艺")
-
-    if (isPgcContent) {
-        return SkiaManager.executeDrawing {
-            val imgList = mutableListOf<org.jetbrains.skia.Image>()
-            imgData?.let { imgList.add(it) }
-            val cimg = imgList.assembleCard(this, id, tag = "搜索", closeInputImages = true)
-            val img = makeCardBg(this, cimg.height, colors) {
-                it.drawImage(cimg, 0f, 0f)
-            }
-            // 关闭中间 Image，释放原生内存
-            cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
-            // All resources automatically released when session closes
-        }
-    }
-
-    // 非 PGC 内容保持原有逻辑
-    // 如果是直播且有 area 信息，使用 liveFooter 模板
-    val footer = if (area != null && tag in listOf("直播", "直播中", "轮播中", "未开播")) {
-        val footerTemplate = BiliConfigManager.config.templateConfig.footer.liveFooter
-        if (footerTemplate.isNotBlank()) {
-            footerTemplate
-                .replace("{name}", author.name)
-                .replace("{uid}", author.mid.toString())
-                .replace("{id}", id)
-                .replace("{time}", time)
-                .replace("{type}", tag)
-                .replace("{area}", area)
-        } else null
-    } else {
-        buildFooter(author.name, author.mid, id, time, tag)
-    }
-
-    return SkiaManager.executeDrawing {
-        val imgList = mutableListOf<org.jetbrains.skia.Image>()
-        imgList.add(author.drawGeneral(this, time, VIDEO_LINK(id), colors.first()))
-        imgData?.let { imgList.add(it) }
-
-        val cimg = imgList.assembleCard(this, id, footer, tag = "搜索", closeInputImages = true)
-
-        val img = makeCardBg(this, cimg.height, colors) {
-            it.drawImage(cimg, 0f, 0f)
-        }
-        // 关闭中间 Image，释放原生内存
-        cacheImage(img, "$id.png", CacheType.DRAW_SEARCH)
-        // All resources automatically released when session closes
-    }
+private fun getDefaultColors(): List<Int> {
+    return BiliConfigManager.config.imageConfig.defaultColor
+        .split(";", "；").map { Color.makeRGB(it.trim()) }
 }
 
 //摆烂行为
@@ -363,27 +348,6 @@ fun LiveRoomDetail.toDrawData(): ModuleDynamic.Major.Live =
         )
     )
 
-fun BiliDetail.toPgcAuthor(): ModuleAuthor? =
-    when (this) {
-        is PgcSeason -> {
-            ModuleAuthor(
-                "AUTHOR_TYPE_PGC",
-                0,
-                title,
-                cover,
-            )
-        }
-        is PgcMedia -> {
-            ModuleAuthor(
-                "AUTHOR_TYPE_PGC",
-                0,
-                media.title,
-                media.cover,
-            )
-        }
-
-        else -> null
-    }
 fun BiliDetail.toPgc(): ModuleDynamic.Major.Pgc? =
     when (this) {
         is PgcSeason -> {

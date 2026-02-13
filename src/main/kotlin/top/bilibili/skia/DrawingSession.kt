@@ -91,8 +91,13 @@ class DrawingSession : AutoCloseable {
         val surface = createSurface(width, height)
         surface.canvas.draw()
         val image = surface.makeImageSnapshot().track()
-        return image.encodeToData(format)?.bytes
+        val data = image.encodeToData(format)
             ?: throw IllegalStateException("Failed to encode image")
+        return try {
+            data.bytes
+        } finally {
+            data.close()
+        }
     }
 
     /**
@@ -126,6 +131,10 @@ class DrawingSession : AutoCloseable {
         // 逆序关闭资源（后创建的先关闭）
         resources.asReversed().forEach { resource ->
             runCatching {
+                // 检查 Skia Managed 资源是否已关闭，避免重复关闭
+                if (resource is org.jetbrains.skia.impl.Managed && resource.isClosed) {
+                    return@forEach
+                }
                 resource.close()
             }.onFailure { e ->
                 logger.warn("关闭资源失败: ${resource::class.simpleName}", e)

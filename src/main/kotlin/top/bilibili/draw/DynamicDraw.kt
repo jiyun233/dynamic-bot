@@ -218,11 +218,21 @@ fun buildFooter(name: String, uid: Long, id: String, time: String, type: String)
  */
 fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String? = null, plusHeight: Int = 0, isForward: Boolean = false, tag: String? = null, closeInputImages: Boolean = false): Image {
     val imageConfig = BiliConfigManager.config.imageConfig
-    val height = sumOf {
-        if (it.width > cardRect.width) {
-            (cardRect.width * it.height / it.width + quality.contentSpace).toInt()
+
+    // 过滤无效的 Image，使用安全访问方法
+    val validImages = this.filter { it.isValid() && it.safeWidth() > 0 && it.safeHeight() > 0 }
+    if (validImages.isEmpty()) {
+        logger.warn("assembleCard: 所有输入图片都无效，创建空白占位图")
+        return getImageMiss(session)
+    }
+
+    val height = validImages.sumOf {
+        val w = it.safeWidth()
+        val h = it.safeHeight()
+        if (w > cardRect.width) {
+            (cardRect.width * h / w + quality.contentSpace).toInt()
         } else {
-            it.height + quality.contentSpace
+            h + quality.contentSpace
         }
     } + plusHeight
 
@@ -233,7 +243,7 @@ fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String
     } else null
 
     val margin = if (isForward) quality.cardPadding * 2 else quality.cardMargin * 2
-    val imgList = this
+    val imgList = validImages  // 使用过滤后的有效图片列表
 
     return try {
         val surface = session.createSurface(
@@ -277,12 +287,16 @@ fun List<Image>.assembleCard(session: DrawingSession, id: String, footer: String
 
         var top = quality.cardMargin + quality.badgeHeight.toFloat()
         for (img in imgList) {
+            val imgWidth = img.safeWidth()
+            val imgHeight = img.safeHeight()
+            if (imgWidth <= 0 || imgHeight <= 0) continue  // 跳过无效图片
+
             canvas.drawScaleWidthImage(img, cardRect.width, quality.cardMargin.toFloat(), top)
 
-            top += if (img.width > cardRect.width) {
-                (cardRect.width * img.height / img.width + quality.contentSpace).toInt()
+            top += if (imgWidth > cardRect.width) {
+                (cardRect.width * imgHeight / imgWidth + quality.contentSpace).toInt()
             } else {
-                img.height + quality.contentSpace
+                imgHeight + quality.contentSpace
             }
         }
 

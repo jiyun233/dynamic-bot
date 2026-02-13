@@ -45,8 +45,15 @@ object LoginService {
             logger.info("正在保存二维码到临时文件...")
             qrImageFile = File(BiliBiliBot.tempPath.toFile(), "bili_qr_${System.currentTimeMillis()}.png").apply {
                 deleteOnExit()
-                writeBytes(qrImage.encodeToData(EncodedImageFormat.PNG)?.bytes ?: byteArrayOf())
+                val data = qrImage.encodeToData(EncodedImageFormat.PNG)
+                try {
+                    writeBytes(data?.bytes ?: byteArrayOf())
+                } finally {
+                    data?.close()
+                }
             }
+            // 关闭二维码 Image
+            qrImage.close()
             logger.info("二维码已保存到: ${qrImageFile.absolutePath}")
 
             val qrImageUrl = ImageCache.toFileUrl(qrImageFile.absolutePath)

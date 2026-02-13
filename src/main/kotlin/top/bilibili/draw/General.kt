@@ -14,6 +14,47 @@ import top.bilibili.utils.loadResourceBytes
 import java.io.File
 import java.util.*
 
+// ==================== Image 安全访问扩展 ====================
+
+/**
+ * 安全获取 Image 的宽度
+ * 使用 Managed.isClosed 检查 native 资源是否已释放
+ * @return 图片宽度，如果 Image 无效则返回 0
+ */
+fun Image.safeWidth(): Int {
+    return try {
+        if (this.isClosed) return 0
+        this.width
+    } catch (e: Exception) {
+        logger.warn("获取 Image 宽度失败: ${e.message}")
+        0
+    }
+}
+
+/**
+ * 安全获取 Image 的高度
+ * @return 图片高度，如果 Image 无效则返回 0
+ */
+fun Image.safeHeight(): Int {
+    return try {
+        if (this.isClosed) return 0
+        this.height
+    } catch (e: Exception) {
+        logger.warn("获取 Image 高度失败: ${e.message}")
+        0
+    }
+}
+
+/**
+ * 检查 Image 是否有效（未关闭且尺寸有效）
+ */
+fun Image.isValid(): Boolean {
+    return try {
+        !this.isClosed && this.width > 0 && this.height > 0
+    } catch (e: Exception) {
+        false
+    }
+}
 
 // ==================== Skia 资源管理工具函数 ====================
 
@@ -237,7 +278,16 @@ fun SVGDOM.makeImage(session: DrawingSession, width: Float, height: Float): Imag
     }
 }
 
-fun Surface.saveImage(path: String) = File(path).writeBytes(makeImageSnapshot().encodeToData()!!.bytes)
+fun Surface.saveImage(path: String) {
+    val image = makeImageSnapshot()
+    val data = image.encodeToData()!!
+    try {
+        File(path).writeBytes(data.bytes)
+    } finally {
+        data.close()
+        image.close()
+    }
+}
 //fun Surface.saveImage(path: java.nio.file.Path) = path.writeBytes(makeImageSnapshot().encodeToData()!!.bytes)
 
 fun Canvas.drawScaleWidthImage(image: Image, width: Float, x: Float, y: Float, paint: Paint = Paint()) {
