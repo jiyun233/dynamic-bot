@@ -31,5 +31,5 @@ jobs:
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: bilibili-dynamic-botjar
+        name: bilibili-dynamic-bot.jar
         path: build/libs/*.jar
